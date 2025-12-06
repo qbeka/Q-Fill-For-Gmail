@@ -311,10 +311,9 @@ function aggressiveSetValue(input, value) {
       });
     } catch (e) { /* Ignore failure */ }
     
-    // 3. For contenteditable elements
+    // 3. For contenteditable elements (use textContent only to prevent XSS)
     if (input.getAttribute('contenteditable') === 'true') {
       input.textContent = value;
-      input.innerHTML = value;
     }
     
     // 4. Set attribute value (some frameworks track this)

@@ -39,5 +39,12 @@ temp/
 *.tar.bz2
 *.tar.xz
 
+# Extension configuration (contains sensitive data)
 manifest.json
+config/config.js
+
+# Environment files
+.env
+.env.local
+.env.*.local
 

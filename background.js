@@ -1,24 +1,23 @@
 // background.js
 import { GmailAPI } from './services/gmail-api.js';
 import { StorageManager } from './services/storage-manager.js';
-
-// Configuration
-const CLIENT_ID = "742920537082-c6ompt7qqk5c97tjut1fvbnlo546moeh.apps.googleusercontent.com";
-const SCOPES = ['https://www.googleapis.com/auth/gmail.readonly'];
+import { CONFIG } from './config/config.js';
+import * as CONSTANTS from './utils/constants.js';
+import * as TabMessenger from './utils/tab-messenger.js';
 
 // Class to manage all background operations
 class BackgroundManager {
   constructor() {
-    this.gmailApi = new GmailAPI(CLIENT_ID, SCOPES);
+    this.gmailApi = new GmailAPI(CONFIG.CLIENT_ID, CONFIG.SCOPES);
     this.storage = new StorageManager();
     this.lastProcessedMessageIds = new Set();
     this.lastFoundCode = null;
     this.lastCodeTimestamp = 0;
     this.isCheckingEmails = false;
-    
+
     // Initialize extension
     this.init();
-    
+
     // Setup message listeners
     this.setupMessageListeners();
   }
@@ -340,292 +339,18 @@ class BackgroundManager {
   
   // Send code to all open tabs
   async sendCodeToTabs(code) {
-    return new Promise((resolve) => {
-      chrome.tabs.query({}, async (tabs) => {
-        if (!tabs || tabs.length === 0) {
-          console.log('No open tabs found');
-          resolve();
-          return;
-        }
-        
-        console.log(`Sending code "${code}" to ${tabs.length} tabs`);
-        let successCount = 0;
-        let failCount = 0;
-        let tabsProcessed = 0;
-        
-        const processTabResults = () => {
-          if (tabsProcessed === tabs.length) {
-            console.log(`Code send complete: ${successCount} successes, ${failCount} failures`);
-            resolve();
-          }
-        };
-        
-        for (const tab of tabs) {
-          try {
-            // Skip chrome:// and other restricted URLs
-            if (!tab.url || 
-                tab.url.startsWith('chrome://') || 
-                tab.url.startsWith('chrome-extension://') ||
-                tab.url.includes('chrome.google.com/webstore') ||
-                tab.url.includes('chrome.google.com/extensions')) {
-              console.log(`Skipping restricted URL: ${tab.url}`);
-              tabsProcessed++;
-              processTabResults();
-              continue;
-            }
-            
-            // First try to send the message directly
-            try {
-              const result = await this.sendMessageToTab(tab.id, code);
-              
-              if (result.success) {
-                console.log(`Code successfully filled in tab: ${tab.id}`);
-                successCount++;
-                tabsProcessed++;
-                processTabResults();
-              } else if (result.needsInjection) {
-                // If content script isn't running, inject it
-                console.log(`Content script not found in tab ${tab.id}, injecting it now...`);
-                try {
-                  // First, check if we're dealing with a Chrome page or extensions gallery
-                  const tabUrl = tab.url || '';
-                  if (tabUrl.startsWith('chrome://') || 
-                      tabUrl.startsWith('chrome-extension://') || 
-                      tabUrl.includes('chrome.google.com/webstore') ||
-                      tabUrl.includes('chrome.google.com/extensions')) {
-                    console.log(`Tab ${tab.id} is a restricted Chrome page, skipping injection`);
-                    failCount++;
-                    tabsProcessed++;
-                    processTabResults();
-                    continue;
-                  }
-                  
-                  // Execute the content script in the tab
-                  await chrome.scripting.executeScript({
-                    target: { tabId: tab.id },
-                    files: ['content.js']
-                  });
-                  
-                  // Wait a moment for the script to initialize
-                  await new Promise(r => setTimeout(r, 300));
-                  
-                  // Try to send the code again
-                  const retryResult = await this.sendMessageToTab(tab.id, code);
-                  if (retryResult.success) {
-                    console.log(`Successfully injected and filled code in tab: ${tab.id}`);
-                    successCount++;
-                  } else {
-                    console.log(`Failed to fill code after injection in tab: ${tab.id}`);
-                    failCount++;
-                  }
-                } catch (injectionError) {
-                  console.error(`Failed to inject content script: ${injectionError}`);
-                  failCount++;
-                }
-                
-                tabsProcessed++;
-                processTabResults();
-              } else {
-                console.log(`Tab ${tab.id} failed to fill code but doesn't need injection`);
-                failCount++;
-                tabsProcessed++;
-                processTabResults();
-              }
-            } catch (messageError) {
-              console.error(`Error in message sending: ${messageError}`);
-              failCount++;
-              tabsProcessed++;
-              processTabResults();
-            }
-          } catch (error) {
-            console.error(`General error processing tab ${tab.id}:`, error);
-            tabsProcessed++;
-            failCount++;
-            processTabResults();
-          }
-        }
-      });
-    });
+    console.log(`Sending code "${code}" to all tabs`);
+    const message = { action: CONSTANTS.MESSAGE_ACTIONS.FILL_CODE, code };
+    const result = await TabMessenger.sendMessageToAllTabs(message);
+    console.log(`Code send complete: ${result.successCount} successes, ${result.failCount} failures`);
   }
   
   // Send notification to all tabs that no code was found
   async sendNoCodeFoundToTabs() {
-    return new Promise((resolve) => {
-      chrome.tabs.query({}, async (tabs) => {
-        if (!tabs || tabs.length === 0) {
-          console.log('No open tabs found for no-code notification');
-          resolve();
-          return;
-        }
-        
-        console.log(`Sending no-code-found notification to ${tabs.length} tabs`);
-        let successCount = 0;
-        let failCount = 0;
-        let tabsProcessed = 0;
-        
-        const processTabResults = () => {
-          if (tabsProcessed === tabs.length) {
-            console.log(`No-code notification complete: ${successCount} successes, ${failCount} failures`);
-            resolve();
-          }
-        };
-        
-        for (const tab of tabs) {
-          try {
-            // Skip chrome:// and other restricted URLs
-            if (!tab.url || 
-                tab.url.startsWith('chrome://') || 
-                tab.url.startsWith('chrome-extension://') ||
-                tab.url.includes('chrome.google.com/webstore') ||
-                tab.url.includes('chrome.google.com/extensions')) {
-              console.log(`Skipping restricted URL: ${tab.url}`);
-              tabsProcessed++;
-              processTabResults();
-              continue;
-            }
-            
-            // First try to send the message directly
-            try {
-              const result = await this.sendNoCodeMessageToTab(tab.id);
-              
-              if (result.success) {
-                console.log(`No-code notification shown in tab: ${tab.id}`);
-                successCount++;
-                tabsProcessed++;
-                processTabResults();
-              } else if (result.needsInjection) {
-                // If content script isn't running, inject it
-                console.log(`Content script not found in tab ${tab.id}, injecting it now...`);
-                try {
-                  // First, check if we're dealing with a Chrome page or extensions gallery
-                  const tabUrl = tab.url || '';
-                  if (tabUrl.startsWith('chrome://') || 
-                      tabUrl.startsWith('chrome-extension://') || 
-                      tabUrl.includes('chrome.google.com/webstore') ||
-                      tabUrl.includes('chrome.google.com/extensions')) {
-                    console.log(`Tab ${tab.id} is a restricted Chrome page, skipping injection`);
-                    failCount++;
-                    tabsProcessed++;
-                    processTabResults();
-                    continue;
-                  }
-                  
-                  // Execute the content script in the tab
-                  await chrome.scripting.executeScript({
-                    target: { tabId: tab.id },
-                    files: ['content.js']
-                  });
-                  
-                  // Wait a moment for the script to initialize
-                  await new Promise(r => setTimeout(r, 300));
-                  
-                  // Try to send the notification again
-                  const retryResult = await this.sendNoCodeMessageToTab(tab.id);
-                  if (retryResult.success) {
-                    console.log(`Successfully injected and showed no-code notification in tab: ${tab.id}`);
-                    successCount++;
-                  } else {
-                    console.log(`Failed to show no-code notification after injection in tab: ${tab.id}`);
-                    failCount++;
-                  }
-                } catch (injectionError) {
-                  console.error(`Failed to inject content script: ${injectionError}`);
-                  failCount++;
-                }
-                
-                tabsProcessed++;
-                processTabResults();
-              } else {
-                console.log(`Tab ${tab.id} failed to show no-code notification but doesn't need injection`);
-                failCount++;
-                tabsProcessed++;
-                processTabResults();
-              }
-            } catch (messageError) {
-              console.error(`Error in no-code message sending: ${messageError}`);
-              failCount++;
-              tabsProcessed++;
-              processTabResults();
-            }
-          } catch (error) {
-            console.error(`General error processing tab ${tab.id} for no-code notification:`, error);
-            tabsProcessed++;
-            failCount++;
-            processTabResults();
-          }
-        }
-      });
-    });
-  }
-  
-  // Try to send a message to a tab, returns {success, needsInjection}
-  async sendMessageToTab(tabId, code) {
-    return new Promise(resolve => {
-      try {
-        chrome.tabs.sendMessage(
-          tabId, 
-          { action: 'fillCode', code }, 
-          (response) => {
-            if (chrome.runtime.lastError) {
-              const errorMsg = chrome.runtime.lastError.message || '';
-              console.log(`Error sending to tab ${tabId}: ${errorMsg}`);
-              
-              // Check if content script is not running (common error patterns)
-              if (errorMsg.includes('receiving end does not exist') ||
-                  errorMsg.includes('Could not establish connection') ||
-                  errorMsg.includes('port closed') ||
-                  errorMsg.includes('disconnected')) {
-                resolve({ success: false, needsInjection: true });
-              } else {
-                resolve({ success: false, needsInjection: false });
-              }
-            } else if (response && response.success) {
-              resolve({ success: true, needsInjection: false });
-            } else {
-              resolve({ success: false, needsInjection: false });
-            }
-          }
-        );
-      } catch (error) {
-        console.error(`Error in sendMessageToTab: ${error}`);
-        resolve({ success: false, needsInjection: false });
-      }
-    });
-  }
-
-  // Try to send a no-code-found message to a tab
-  async sendNoCodeMessageToTab(tabId) {
-    return new Promise(resolve => {
-      try {
-        chrome.tabs.sendMessage(
-          tabId, 
-          { action: 'noCodeFound' }, 
-          (response) => {
-            if (chrome.runtime.lastError) {
-              const errorMsg = chrome.runtime.lastError.message || '';
-              console.log(`Error sending no-code notification to tab ${tabId}: ${errorMsg}`);
-              
-              // Check if content script is not running (common error patterns)
-              if (errorMsg.includes('receiving end does not exist') ||
-                  errorMsg.includes('Could not establish connection') ||
-                  errorMsg.includes('port closed') ||
-                  errorMsg.includes('disconnected')) {
-                resolve({ success: false, needsInjection: true });
-              } else {
-                resolve({ success: false, needsInjection: false });
-              }
-            } else if (response && response.success) {
-              resolve({ success: true, needsInjection: false });
-            } else {
-              resolve({ success: false, needsInjection: false });
-            }
-          }
-        );
-      } catch (error) {
-        console.error(`Error in sendNoCodeMessageToTab: ${error}`);
-        resolve({ success: false, needsInjection: false });
-      }
-    });
+    console.log('Sending no-code-found notification to all tabs');
+    const message = { action: CONSTANTS.MESSAGE_ACTIONS.NO_CODE_FOUND };
+    const result = await TabMessenger.sendMessageToAllTabs(message);
+    console.log(`No-code notification complete: ${result.successCount} successes, ${result.failCount} failures`);
   }
   
   /**
