@@ -40,7 +40,7 @@ const CONFIG = {
    * Extension version
    * Keep in sync with manifest.json
    */
-  VERSION: '1.0.0',
+  VERSION: '1.1.0',
 
   /**
    * Debug mode - set to true for verbose logging

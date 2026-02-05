@@ -163,7 +163,7 @@ In `config/config.js`:
 const CONFIG = {
   OAUTH_CLIENT_ID: 'your-client-id.apps.googleusercontent.com',
   OAUTH_SCOPES: ['https://www.googleapis.com/auth/gmail.readonly'],
-  VERSION: '1.0.0',
+  VERSION: '1.1.0',
   DEBUG_MODE: false  // Set to true for verbose console logging
 };
 ```

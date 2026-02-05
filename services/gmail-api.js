@@ -5,7 +5,7 @@
  * Provides methods for token management and message retrieval.
  * 
  * @fileoverview Gmail API wrapper for Q-Fill
- * @version 1.0.0
+ * @version 1.1.0
  */
 
 import { TIME, CODE_VALIDATION } from '../utils/constants.js';
@@ -107,23 +107,16 @@ class GmailAPI {
   }
   
   /**
-   * Get recent Gmail messages
-   * @returns {Promise<Array>} List of recent message objects
+   * Get the most recent Gmail message only
+   * @returns {Promise<Array>} Array with single most recent message
    */
   async getRecentMessages() {
     try {
       const token = await this.ensureAuthenticated(false);
       
-      // Calculate time window - emails from last 5 minutes
-      const currentTime = Date.now();
-      const timeWindowSeconds = (TIME.EMAIL_FETCH_WINDOW_MINUTES * 60);
-      const windowStart = new Date(currentTime - (timeWindowSeconds * 1000)).getTime() / 1000;
-      
-      // Gmail search query
-      const query = `after:${Math.floor(windowStart)} OR (is:unread newer:1d)`;
-      
+      // Fetch only the single most recent email
       const response = await fetch(
-        `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=${CODE_VALIDATION.MAX_GMAIL_RESULTS}`,
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=1`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -139,29 +132,15 @@ class GmailAPI {
       }
       
       const data = await response.json();
+      this.lastCheckTime = Date.now();
       
-      this.lastCheckTime = currentTime;
-      
-      if (!data.messages) {
-        console.log('No messages in the response');
+      if (!data.messages || data.messages.length === 0) {
+        console.log('No messages found');
         return [];
       }
       
-      console.log(`Found ${data.messages.length} recent Gmail messages`);
-      
-      // Verify newest first ordering
-      if (data.messages.length > 0) {
-        try {
-          const mostRecentMessage = await this.getMessage(data.messages[0].id);
-          const internalDate = parseInt(mostRecentMessage.internalDate, 10);
-          const messageDate = new Date(internalDate);
-          console.log(`Most recent message timestamp: ${messageDate.toISOString()}`);
-        } catch (error) {
-          console.warn('Error checking most recent message date:', error);
-        }
-      }
-      
-      return data.messages || [];
+      console.log('Fetched most recent email');
+      return data.messages;
     } catch (error) {
       console.error('Error fetching Gmail messages:', error);
       throw error;

@@ -5,7 +5,7 @@
  * Handles persistent browser storage for extension state.
  * 
  * @fileoverview Chrome storage wrapper for Q-Fill
- * @version 1.0.0
+ * @version 1.1.0
  */
 
 /**

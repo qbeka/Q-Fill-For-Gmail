@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Q-Fill for Gmail",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Automatically extracts verification codes from Gmail and fills them into web forms. Privacy-focused: all processing happens locally.",
 
   "permissions": [

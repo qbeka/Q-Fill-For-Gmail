@@ -5,6 +5,39 @@ All notable changes to Q-Fill for Gmail will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-02-04
+
+### Improved
+- **Rewrote code extraction engine** - Multi-pattern scoring system with 6 detection strategies
+  - Explicit patterns (verification code is X) - highest confidence
+  - Spaced/dashed codes (123 456, 123-456)
+  - Context-aware search near verification keywords
+  - Highlighted codes in quotes, bold, brackets
+  - Subject line codes
+  - Fallback patterns for common 6-digit codes
+- **Rewrote input detection engine** - Advanced scoring system for finding the correct field
+  - autocomplete="one-time-code" detection (+200 score)
+  - Strong/medium keyword matching in attributes and context
+  - maxLength analysis (1 for OTP digits, 4-8 for codes)
+  - inputmode and pattern attribute detection
+  - Focus state, viewport position, modal context
+  - Negative signal penalties (search, email, username fields)
+- **Only checks most recent email** - Faster and more accurate
+- **Single input fill only** - Fills exactly one input (the best match) to prevent errors
+- **Better OTP group detection** - Validates inputs are visually aligned in a row
+
+### Fixed
+- Fixed issue where code could fill into wrong input fields
+- Fixed issue where multiple inputs could be filled simultaneously
+- Improved React/Angular/Vue compatibility with proper event dispatching
+
+### Changed
+- Simplified Gmail API call to fetch only 1 message
+- Reduced API request size and response time
+- Updated version to 1.1.0 across all files
+
+---
+
 ## [1.0.0] - 2026-02-04
 
 ### Branding

@@ -5,7 +5,7 @@
  * Coordinates with content scripts to fill verification codes into web forms.
  * 
  * @fileoverview Main background script for the extension
- * @version 1.0.0
+ * @version 1.1.0
  */
 
 import { GmailAPI } from './services/gmail-api.js';
@@ -14,8 +14,8 @@ import { sendCodeToTabs, sendNoCodeFoundToTabs } from './utils/tab-messenger.js'
 import { 
   TIME, 
   CODE_VALIDATION, 
-  VERIFICATION_KEYWORDS, 
-  CODE_PATTERNS,
+  STRONG_VERIFICATION_KEYWORDS,
+  WEAK_VERIFICATION_KEYWORDS,
   MESSAGE_ACTIONS,
   CHECKING_STATUS
 } from './utils/constants.js';
@@ -29,9 +29,6 @@ class BackgroundManager {
   constructor() {
     this.gmailApi = new GmailAPI(CONFIG.OAUTH_CLIENT_ID, CONFIG.OAUTH_SCOPES);
     this.storage = new StorageManager();
-    this.lastProcessedMessageIds = new Set();
-    this.lastFoundCode = null;
-    this.lastCodeTimestamp = 0;
     this.isCheckingEmails = false;
     
     this.init();
@@ -40,33 +37,29 @@ class BackgroundManager {
   
   /**
    * Initialize the extension
-   * Checks for existing authentication and retrieves token if available
    */
   async init() {
-    console.log('Initializing Q-Fill for Gmail');
+    console.log('Initializing Q-Fill for Gmail v2.0');
     
     const isAuthenticated = await this.storage.get('isAuthenticated');
     if (isAuthenticated) {
-      console.log('Previously authenticated, retrieving token');
       try {
         await this.gmailApi.getToken(false);
-        console.log('Token retrieved successfully - ready for manual checking');
+        console.log('Token retrieved - ready');
       } catch (error) {
         console.error('Failed to retrieve token:', error);
         await this.storage.set('isAuthenticated', false);
       }
-    } else {
-      console.log('Not authenticated yet, waiting for user interaction');
     }
   }
   
   /**
-   * Set up message listeners for communication with popup and content scripts
+   * Set up message listeners
    */
   setupMessageListeners() {
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       if (CONFIG.DEBUG_MODE) {
-        console.log('Background script received message:', request);
+        console.log('Received message:', request.action);
       }
       
       switch (request.action) {
@@ -88,7 +81,6 @@ class BackgroundManager {
           return true;
           
         case MESSAGE_ACTIONS.CONTENT_SCRIPT_READY:
-          console.log(`Content script ready in tab at URL: ${request.url}`);
           sendResponse({ success: true });
           return true;
           
@@ -98,10 +90,6 @@ class BackgroundManager {
     });
   }
   
-  /**
-   * Handle authentication request
-   * @param {Function} sendResponse - Response callback
-   */
   async handleAuthenticate(sendResponse) {
     try {
       await this.gmailApi.getToken(true);
@@ -109,118 +97,86 @@ class BackgroundManager {
       sendResponse({ success: true });
     } catch (error) {
       console.error('Authentication failed:', error);
-      sendResponse({ 
-        success: false, 
-        error: error.message || 'Authentication failed' 
-      });
+      sendResponse({ success: false, error: error.message });
     }
   }
   
-  /**
-   * Handle auth status check request
-   * @param {Function} sendResponse - Response callback
-   */
   async handleGetAuthStatus(sendResponse) {
     try {
       const isAuthenticated = await this.storage.get('isAuthenticated');
       sendResponse({ isAuthenticated });
     } catch (error) {
-      console.error('Error checking auth status:', error);
       sendResponse({ isAuthenticated: false, error: error.message });
     }
   }
   
-  /**
-   * Handle clear authentication request
-   * @param {Function} sendResponse - Response callback
-   */
   async handleClearAuth(sendResponse) {
     try {
       await this.gmailApi.removeToken();
       await this.storage.set('isAuthenticated', false);
       sendResponse({ success: true });
     } catch (error) {
-      console.error('Error clearing authentication:', error);
       sendResponse({ success: false, error: error.message });
     }
   }
   
-  /**
-   * Send status update to popup
-   * @param {string} status - Status identifier
-   * @param {Object} extra - Additional data to include
-   */
   sendStatusUpdate(status, extra = {}) {
     chrome.runtime.sendMessage({ 
       action: MESSAGE_ACTIONS.CHECKING_STATUS, 
       status,
       ...extra
-    }).catch(() => {
-      // Popup may be closed, ignore errors
-    });
+    }).catch(() => {});
   }
   
   /**
-   * Check Gmail for verification codes
-   * Main email checking workflow
+   * Check Gmail for verification codes - ONLY checks most recent email
    */
   async checkEmails() {
     if (this.isCheckingEmails) {
-      console.log('Already checking emails, skipping this request');
+      console.log('Already checking, skipping');
       return;
     }
     
     this.isCheckingEmails = true;
     
     try {
-      console.log('Manually checking for new Gmail messages');
+      console.log('Checking most recent email for verification code');
       this.sendStatusUpdate(CHECKING_STATUS.CHECKING);
       
       const messages = await this.gmailApi.getRecentMessages();
       
       if (!messages || messages.length === 0) {
-        console.log('No new messages found');
-        this.showNotification('No emails found', 'There are no recent emails in your inbox to check for codes.');
+        console.log('No recent emails found');
+        this.showNotification('No emails found', 'No recent emails to check.');
         this.sendStatusUpdate(CHECKING_STATUS.NO_EMAILS);
         await sendNoCodeFoundToTabs();
         return;
       }
       
-      console.log(`Found ${messages.length} messages, checking the most recent one`);
-      
-      // Get the most recent message
-      const mostRecentMessage = messages[0];
-      
-      // Log message info for debugging
-      await this.logMessageInfo(mostRecentMessage.id);
-      
-      // Process the message
-      const extractedCode = await this.processMessage(mostRecentMessage.id);
+      // ONLY process the single most recent email
+      const messageId = messages[0].id;
+      const extractedCode = await this.processMessage(messageId);
       
       if (extractedCode) {
-        console.log(`Found code in the most recent message, sending to tabs`);
+        console.log(`Found code: ${extractedCode}`);
         this.sendStatusUpdate(CHECKING_STATUS.CODE_FOUND, { code: extractedCode });
         await sendCodeToTabs(extractedCode);
       } else {
-        console.log('No verification code found in the most recent email');
-        this.showNotification('No verification code found', 'The most recent email does not contain a verification code.');
+        console.log('No code in most recent email');
+        this.showNotification('No code found', 'Most recent email has no verification code.');
         this.sendStatusUpdate(CHECKING_STATUS.NO_CODE_FOUND);
         await sendNoCodeFoundToTabs();
       }
     } catch (error) {
-      console.error('Error fetching Gmail messages:', error);
+      console.error('Error:', error);
       this.sendStatusUpdate(CHECKING_STATUS.ERROR, { error: error.message });
       await sendNoCodeFoundToTabs();
       
-      // Handle token expiration
-      if (error.message && error.message.includes('401')) {
-        console.log('Token may have expired, attempting refresh');
+      if (error.message?.includes('401')) {
         try {
           await this.gmailApi.removeToken();
           await this.gmailApi.getToken(false);
-        } catch (refreshError) {
-          console.error('Failed to refresh token:', refreshError);
-        }
+        } catch (e) {}
       }
     } finally {
       this.isCheckingEmails = false;
@@ -228,108 +184,45 @@ class BackgroundManager {
   }
   
   /**
-   * Log information about a message for debugging
-   * @param {string} messageId - Gmail message ID
-   */
-  async logMessageInfo(messageId) {
-    try {
-      const message = await this.gmailApi.getMessage(messageId);
-      const internalDate = parseInt(message.internalDate || Date.now(), 10);
-      const messageDate = new Date(internalDate);
-      const messageAgeMinutes = (Date.now() - internalDate) / (1000 * 60);
-      
-      console.log(`Most recent message is from ${messageDate.toISOString()} (${messageAgeMinutes.toFixed(1)} minutes old)`);
-      
-      const headers = message.payload?.headers || [];
-      const subject = headers.find(h => h.name.toLowerCase() === 'subject')?.value || 'No subject';
-      const from = headers.find(h => h.name.toLowerCase() === 'from')?.value || '';
-      console.log(`Most recent email subject: "${subject}"`);
-      console.log(`Email From: ${from}`);
-    } catch (error) {
-      console.warn('Error checking message details:', error);
-    }
-  }
-  
-  /**
    * Process a Gmail message and extract verification code
-   * @param {string} messageId - Gmail message ID
-   * @returns {Promise<string|null>} Extracted code or null
    */
   async processMessage(messageId) {
     try {
-      console.log(`Processing message ${messageId}`);
       const message = await this.gmailApi.getMessage(messageId);
       
-      if (!message || !message.payload) {
-        console.log('Invalid message format, skipping');
-        return null;
-      }
+      if (!message?.payload) return null;
       
-      // Extract full content
-      let fullContent = '';
-      
-      // Extract subject from headers
+      // Get subject and sender
       const headers = message.payload.headers || [];
       const subject = headers.find(h => h.name.toLowerCase() === 'subject')?.value || '';
       const from = headers.find(h => h.name.toLowerCase() === 'from')?.value || '';
       
-      console.log(`Email From: ${from}`);
-      console.log(`Email Subject: ${subject}`);
+      console.log(`From: ${from}`);
+      console.log(`Subject: ${subject}`);
       
-      fullContent += subject + ' ';
-      fullContent += this.extractBodyContent(message.payload);
+      // Extract body content
+      const body = this.extractBodyContent(message.payload);
+      const fullContent = subject + ' ' + body;
       
-      if (fullContent.length < CODE_VALIDATION.MIN_EMAIL_CONTENT_LENGTH) {
-        console.log('Warning: Email content is very short, might not contain verification code');
-      }
-      
-      if (CONFIG.DEBUG_MODE) {
-        const contentPreview = fullContent.substring(0, 300);
-        console.log('Extracted email content (first 300 chars):', contentPreview + '...');
-      }
-      
-      // Check for verification context
-      const hasVerificationContext = VERIFICATION_KEYWORDS.some(word => 
-        fullContent.toLowerCase().includes(word.toLowerCase())
-      );
-      
-      if (!hasVerificationContext) {
-        console.log('Warning: Email does not contain common verification keywords');
-      } else {
-        console.log('Email contains verification-related keywords');
-      }
-      
-      // Extract code
-      const code = this.extractCode(fullContent);
-      
-      if (code) {
-        console.log(`Code extracted from email: ${code}`);
-        this.lastFoundCode = code;
-        this.lastCodeTimestamp = Date.now();
-        return code;
-      }
-      
-      console.log('No verification code found in message');
-      return null;
+      // Extract the code
+      return this.extractCode(fullContent, subject);
     } catch (error) {
-      console.error(`Error processing message ${messageId}:`, error);
+      console.error(`Error processing message:`, error);
       return null;
     }
   }
   
   /**
    * Recursively extract text content from message parts
-   * @param {Object} part - Message part object
-   * @returns {string} Extracted text content
    */
   extractBodyContent(part) {
     let content = '';
     
-    if (part.body && part.body.data) {
+    if (part.body?.data) {
       content += this.decodeBase64Url(part.body.data) + ' ';
     }
     
-    if (part.parts && part.parts.length > 0) {
+    if (part.parts?.length > 0) {
       for (const childPart of part.parts) {
         content += this.extractBodyContent(childPart) + ' ';
       }
@@ -340,8 +233,6 @@ class BackgroundManager {
   
   /**
    * Decode Base64Url encoded string
-   * @param {string} data - Base64Url encoded data
-   * @returns {string} Decoded UTF-8 string
    */
   decodeBase64Url(data) {
     try {
@@ -354,164 +245,231 @@ class BackgroundManager {
           .join('')
       );
     } catch (error) {
-      console.error('Error decoding base64:', error);
       return '';
     }
   }
   
-  /**
-   * Show a browser notification
-   * @param {string} title - Notification title
-   * @param {string} message - Notification message
-   */
   showNotification(title, message) {
     try {
       chrome.notifications.create({
         type: 'basic',
         iconUrl: 'icons/icon128.png',
-        title: title,
-        message: message
+        title,
+        message
       });
-      console.log(`Notification shown: ${title} - ${message}`);
-    } catch (error) {
-      console.error('Error showing notification:', error);
-    }
+    } catch (e) {}
   }
   
   /**
-   * Extract verification code from text using pattern matching
-   * @param {string} text - Text to extract code from
+   * IMPROVED: Extract verification code using smart pattern matching
+   * @param {string} text - Full email text
+   * @param {string} subject - Email subject
    * @returns {string|null} Extracted code or null
    */
-  extractCode(text) {
+  extractCode(text, subject) {
     if (!text) return null;
     
-    console.log('Extracting code from text');
+    // Clean HTML and normalize
+    const cleanText = text
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
     
-    // Remove HTML tags and normalize whitespace
-    const cleanText = text.replace(/<\/?[^>]+(>|$)/g, ' ')
-                          .replace(/\s+/g, ' ')
-                          .trim();
+    const lowerText = cleanText.toLowerCase();
     
-    // Check for verification context - REQUIRED
-    const hasVerificationContext = VERIFICATION_KEYWORDS.some(word => 
-      cleanText.toLowerCase().includes(word.toLowerCase())
-    );
+    // Check if this looks like a verification email
+    const hasStrongContext = STRONG_VERIFICATION_KEYWORDS.some(kw => lowerText.includes(kw));
+    const hasWeakContext = WEAK_VERIFICATION_KEYWORDS.some(kw => lowerText.includes(kw));
     
-    if (!hasVerificationContext) {
-      console.log('No verification context found in email, not extracting any codes');
+    if (!hasStrongContext && !hasWeakContext) {
+      console.log('Email does not appear to be verification-related');
       return null;
     }
     
-    // Check for snippet pattern first
-    if (text.includes('verification code') || text.includes('confirmation code')) {
-      const snippetMatch = text.match(/(?:verification|confirmation)\s+code\s+(?:is|:)?\s+([0-9]{4,8})/i);
-      if (snippetMatch && snippetMatch[1]) {
-        const matchedCode = snippetMatch[1].replace(/\s+/g, '');
-        console.log(`Found code from verification snippet: ${matchedCode}`);
-        const processedCode = this.processCode(matchedCode);
-        if (processedCode) return processedCode;
+    // Collect all candidate codes with scores
+    const candidates = [];
+    
+    // === PATTERN 1: Explicit "code is X" or "code: X" patterns ===
+    const explicitPatterns = [
+      /(?:verification|security|confirmation|login|sign-?in|auth(?:entication)?|one-?time|otp|2fa)\s*code\s*(?:is|:|\s)\s*[:=]?\s*([0-9]{4,8})/gi,
+      /(?:your|the)\s+(?:code|otp|pin|passcode)\s*(?:is|:)\s*[:=]?\s*([0-9]{4,8})/gi,
+      /(?:code|pin|otp|passcode)\s*[:=]\s*([0-9]{4,8})/gi,
+      /(?:enter|use|input)\s+(?:code|otp)?\s*[:=]?\s*([0-9]{4,8})/gi,
+    ];
+    
+    for (const pattern of explicitPatterns) {
+      let match;
+      while ((match = pattern.exec(cleanText)) !== null) {
+        const code = match[1].replace(/\s/g, '');
+        if (this.isValidCode(code)) {
+          candidates.push({ code, score: 100, source: 'explicit' });
+        }
       }
     }
     
-    // Try each pattern in order
-    for (const regex of CODE_PATTERNS) {
-      const match = cleanText.match(regex);
-      if (match && match[1]) {
-        const matchedCode = match[1].replace(/\s+/g, '');
-        console.log(`Found code: ${matchedCode} using pattern: ${regex}`);
-        const processedCode = this.processCode(matchedCode);
-        if (processedCode) return processedCode;
+    // === PATTERN 2: Codes with spaces or dashes (123 456 or 123-456) ===
+    const spacedPatterns = [
+      /\b([0-9]{3})\s+([0-9]{3})\b/g,
+      /\b([0-9]{3})-([0-9]{3})\b/g,
+      /\b([0-9]{2})\s+([0-9]{2})\s+([0-9]{2})\b/g,
+    ];
+    
+    for (const pattern of spacedPatterns) {
+      let match;
+      while ((match = pattern.exec(cleanText)) !== null) {
+        const code = match.slice(1).join('');
+        if (this.isValidCode(code)) {
+          // Check if near verification keyword
+          const nearbyText = cleanText.substring(Math.max(0, match.index - 50), match.index + 50).toLowerCase();
+          const nearKeyword = STRONG_VERIFICATION_KEYWORDS.some(kw => nearbyText.includes(kw));
+          candidates.push({ code, score: nearKeyword ? 90 : 60, source: 'spaced' });
+        }
       }
     }
     
-    console.log('No verification code matched our patterns in this email');
-    return null;
-  }
-  
-  /**
-   * Process and validate an extracted code
-   * @param {string} codeString - Raw code string
-   * @returns {string|null} Processed valid code or null
-   */
-  processCode(codeString) {
-    const cleanCode = codeString.replace(/[^a-zA-Z0-9]/g, '');
-    const numericOnly = codeString.replace(/[^0-9]/g, '');
-    
-    if (CONFIG.DEBUG_MODE) {
-      console.log(`Extracted part: ${cleanCode} (numeric: ${numericOnly}) from ${codeString}`);
+    // === PATTERN 3: Standalone codes near verification context ===
+    // Look for codes within 100 chars of strong keywords
+    for (const keyword of STRONG_VERIFICATION_KEYWORDS) {
+      const keywordIndex = lowerText.indexOf(keyword);
+      if (keywordIndex !== -1) {
+        // Search around the keyword
+        const start = Math.max(0, keywordIndex - 30);
+        const end = Math.min(cleanText.length, keywordIndex + keyword.length + 100);
+        const nearbyText = cleanText.substring(start, end);
+        
+        // Find standalone numbers
+        const numPattern = /\b([0-9]{4,8})\b/g;
+        let match;
+        while ((match = numPattern.exec(nearbyText)) !== null) {
+          const code = match[1];
+          if (this.isValidCode(code)) {
+            const distance = Math.abs(match.index - (keywordIndex - start));
+            const score = 80 - Math.min(distance / 5, 30);
+            candidates.push({ code, score, source: 'nearContext' });
+          }
+        }
+      }
     }
     
-    if (!this.isValidCode(numericOnly) && !this.isValidCode(cleanCode)) {
-      console.log(`Rejected invalid code: ${cleanCode}`);
+    // === PATTERN 4: Highlighted/emphasized codes ===
+    const highlightPatterns = [
+      /["']([0-9]{4,8})["']/g,
+      /\*\*([0-9]{4,8})\*\*/g,
+      /\[([0-9]{4,8})\]/g,
+      /\(([0-9]{4,8})\)/g,
+      /<b>([0-9]{4,8})<\/b>/gi,
+      /<strong>([0-9]{4,8})<\/strong>/gi,
+    ];
+    
+    for (const pattern of highlightPatterns) {
+      let match;
+      const searchText = text; // Use original text for HTML patterns
+      while ((match = pattern.exec(searchText)) !== null) {
+        const code = match[1];
+        if (this.isValidCode(code)) {
+          candidates.push({ code, score: 75, source: 'highlighted' });
+        }
+      }
+    }
+    
+    // === PATTERN 5: Subject line codes (high priority) ===
+    const subjectCodes = subject.match(/\b([0-9]{4,8})\b/g);
+    if (subjectCodes) {
+      for (const code of subjectCodes) {
+        if (this.isValidCode(code)) {
+          candidates.push({ code, score: 95, source: 'subject' });
+        }
+      }
+    }
+    
+    // === PATTERN 6: Fallback - any standalone 6-digit number (most common) ===
+    if (candidates.length === 0 && hasStrongContext) {
+      const fallbackPattern = /\b([0-9]{6})\b/g;
+      let match;
+      while ((match = fallbackPattern.exec(cleanText)) !== null) {
+        const code = match[1];
+        if (this.isValidCode(code)) {
+          candidates.push({ code, score: 40, source: 'fallback6digit' });
+        }
+      }
+    }
+    
+    // === Select the best code ===
+    if (candidates.length === 0) {
+      console.log('No verification codes found');
       return null;
     }
     
-    // Standard numeric code
-    if (numericOnly.length >= CODE_VALIDATION.MIN_LENGTH && 
-        numericOnly.length <= CODE_VALIDATION.MAX_LENGTH && 
-        this.isValidCode(numericOnly)) {
-      return numericOnly;
-    }
+    // Sort by score (highest first), then prefer 6-digit codes
+    candidates.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      // Prefer 6-digit codes
+      const aIs6 = a.code.length === 6 ? 1 : 0;
+      const bIs6 = b.code.length === 6 ? 1 : 0;
+      return bIs6 - aIs6;
+    });
     
-    // Alphanumeric code
-    if (cleanCode.length >= 6 && cleanCode.length <= 8 && this.isValidCode(cleanCode)) {
-      return cleanCode.toUpperCase();
-    }
+    // Remove duplicates and log
+    const uniqueCodes = [...new Map(candidates.map(c => [c.code, c])).values()];
+    console.log('Code candidates:', uniqueCodes.slice(0, 5).map(c => `${c.code} (${c.score}, ${c.source})`));
     
-    return null;
+    const bestCode = uniqueCodes[0].code;
+    console.log(`Selected code: ${bestCode} (score: ${uniqueCodes[0].score}, source: ${uniqueCodes[0].source})`);
+    
+    return bestCode;
   }
   
   /**
    * Validate a potential verification code
-   * @param {string} code - Code to validate
-   * @returns {boolean} Whether the code is valid
    */
   isValidCode(code) {
     if (!code) return false;
     
-    // Length checks
-    if (code.length < CODE_VALIDATION.MIN_LENGTH) return false;
-    if (code.length > CODE_VALIDATION.MAX_LENGTH) return false;
+    const len = code.length;
+    if (len < CODE_VALIDATION.MIN_LENGTH || len > CODE_VALIDATION.MAX_LENGTH) return false;
     
-    const isNumeric = /^[0-9]+$/.test(code);
-    const isValidAlphanumeric = /^[A-Z0-9]{6,8}$/.test(code) && 
-                                /[A-Z]/.test(code) && 
-                                /[0-9]/.test(code) && 
-                                !/^[0]+$/.test(code);
+    // Must be numeric for standard codes
+    if (!/^[0-9]+$/.test(code)) return false;
     
-    // Reject date-like patterns
-    if (/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/.test(code) || 
-        /^\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}$/.test(code)) {
-      return false;
-    }
-    
-    // Reject repeated digits (000000)
+    // Reject all same digits (000000, 111111)
     if (/^(\d)\1+$/.test(code)) return false;
     
-    // Reject sequential digits (123456, 654321)
-    if (/^(?:0?1?2?3?4?5?6?7?8?9?|9?8?7?6?5?4?3?2?1?0?)$/.test(code)) return false;
+    // Reject sequential (123456, 654321)
+    const isSequential = (s) => {
+      for (let i = 1; i < s.length; i++) {
+        if (parseInt(s[i]) !== parseInt(s[i-1]) + 1) return false;
+      }
+      return true;
+    };
+    const isReverseSequential = (s) => {
+      for (let i = 1; i < s.length; i++) {
+        if (parseInt(s[i]) !== parseInt(s[i-1]) - 1) return false;
+      }
+      return true;
+    };
+    if (isSequential(code) || isReverseSequential(code)) return false;
     
-    // Reject year-like patterns
-    if (/^(19|20)\d{2}$/.test(code)) return false;
+    // Reject year-like 4-digit patterns
+    if (len === 4 && /^(19|20)\d{2}$/.test(code)) return false;
     
-    if (isNumeric) {
-      return code.length >= CODE_VALIDATION.MIN_LENGTH && 
-             code.length <= CODE_VALIDATION.MAX_LENGTH;
-    }
+    // Reject date-like patterns
+    if (/^(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$/.test(code)) return false; // MMDD
+    if (/^(0[1-9]|[12]\d|3[01])(0[1-9]|1[0-2])$/.test(code)) return false; // DDMM
     
-    return isValidAlphanumeric;
+    return true;
   }
 }
 
-// Create background manager instance
+// Create instance
 const backgroundManager = new BackgroundManager();
 
-// Handle installation and startup events
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('Extension installed');
+  console.log('Q-Fill installed');
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  console.log('Extension started');
+  console.log('Q-Fill started');
 });

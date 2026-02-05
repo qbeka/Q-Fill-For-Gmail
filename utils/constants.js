@@ -14,7 +14,7 @@ export const TIME = {
   /** Delay before retrying message send after script injection */
   INJECTION_RETRY_DELAY_MS: 300,
   
-  /** Time window for fetching recent emails (5 minutes in seconds) */
+  /** Time window for fetching recent emails (5 minutes) */
   EMAIL_FETCH_WINDOW_MINUTES: 5,
   
   /** Initial check time offset (2 minutes in ms) */
@@ -35,36 +35,61 @@ export const CODE_VALIDATION = {
   MAX_LENGTH: 8,
   
   /** Minimum email content length to likely contain a code */
-  MIN_EMAIL_CONTENT_LENGTH: 50,
+  MIN_EMAIL_CONTENT_LENGTH: 20,
   
-  /** Maximum results to fetch from Gmail API */
-  MAX_GMAIL_RESULTS: 10
+  /** Maximum results to fetch from Gmail API - only need 1 */
+  MAX_GMAIL_RESULTS: 1
 };
 
 /**
- * Keywords for identifying verification-related emails
+ * Strong verification keywords - high confidence the email contains a code
  */
-export const VERIFICATION_KEYWORDS = Object.freeze([
+export const STRONG_VERIFICATION_KEYWORDS = Object.freeze([
+  'verification code',
+  'verify code',
+  'confirmation code',
+  'security code',
+  'login code',
+  'sign-in code',
+  'signin code',
+  'authentication code',
+  'authorization code',
+  'one-time code',
+  'one time code',
+  'otp',
+  '2fa',
+  'two-factor',
+  'two factor',
+  'passcode',
+  'one-time password',
+  'temporary password',
+  'access code'
+]);
+
+/**
+ * Weak verification keywords - may indicate a code
+ */
+export const WEAK_VERIFICATION_KEYWORDS = Object.freeze([
   'verification',
   'verify',
   'code',
-  'pin',
-  'otp',
-  'passcode',
+  'confirm',
   'secure',
   'security',
-  'authorization',
   'authenticate',
-  'auth',
-  'confirm',
-  'confirmation',
   'login',
+  'sign in',
   'sign-in',
-  '2fa',
-  'two-factor',
-  'one-time',
-  'password',
-  'token'
+  'token',
+  'pin'
+]);
+
+/**
+ * All verification keywords (combined)
+ */
+export const VERIFICATION_KEYWORDS = Object.freeze([
+  ...STRONG_VERIFICATION_KEYWORDS,
+  ...WEAK_VERIFICATION_KEYWORDS
 ]);
 
 /**
@@ -82,7 +107,10 @@ export const INPUT_VERIFICATION_KEYWORDS = Object.freeze([
   'confirm',
   'passcode',
   'tfa',
-  '2fa'
+  '2fa',
+  'mfa',
+  'one-time',
+  'onetime'
 ]);
 
 /**
@@ -117,7 +145,13 @@ export const SKIP_INPUT_TYPES = Object.freeze([
   'hidden',
   'image',
   'reset',
-  'color'
+  'color',
+  'date',
+  'datetime-local',
+  'month',
+  'week',
+  'time',
+  'range'
 ]);
 
 /**
@@ -128,8 +162,7 @@ export const TEXT_INPUT_TYPES = Object.freeze([
   '',
   'tel',
   'number',
-  'password',
-  'email'
+  'password'
 ]);
 
 /**
@@ -156,47 +189,6 @@ export const CHECKING_STATUS = Object.freeze({
   NO_CODE_FOUND: 'noCodeFound',
   ERROR: 'error'
 });
-
-/**
- * Regex patterns for extracting verification codes
- * Ordered by specificity (most specific first)
- */
-export const CODE_PATTERNS = Object.freeze([
-  // Very specific patterns for numeric codes with clear labeling
-  /(?:verification|auth|security|confirmation|login|sign-in|2fa|authorization)\s+code(?:\s+is|\s*[:=]\s*)([0-9]{4,8})/i,
-  /(?:your|the)\s+(?:code|otp|pin|passcode)(?:\s+is|\s*[:=]\s*)([0-9]{4,8})/i,
-  /(?:code|pin|otp|passcode)\s*[:=]\s*([0-9]{4,8})/i,
-  
-  // Common formatted codes with spaces or dashes
-  /\b(?:code|pin|otp|passcode)\s*[:=]?\s*([0-9]{3}[\s\-][0-9]{3})\b/i,
-  
-  // Special formats with clear labeling
-  /\b(?:code|pin|otp|passcode)\s*[:=]?\s*([A-Z0-9]{1,2}[\s\-]+[0-9]{3,6})\b/i,
-  
-  // Look for more general labeled codes
-  /(?:code|pin|otp|token|passcode|password)\s*(?:is|:=|:|\s)\s*([a-zA-Z0-9]{4,8})/i,
-  
-  // Codes highlighted in quotes, brackets, etc.
-  /"([0-9]{4,8})"/,
-  /'([0-9]{4,8})'/,
-  /\s\*\*([0-9]{4,8})\*\*/,
-  /\(([0-9]{4,8})\)/,
-  
-  // Codes in verification context
-  /verification[\s\S]{1,50}?([0-9]{4,8})/i,
-  /authentication[\s\S]{1,50}?([0-9]{4,8})/i,
-  /one-time[\s\S]{1,50}?([0-9]{4,8})/i,
-  /security[\s\S]{1,50}?([0-9]{4,8})/i,
-  
-  // Common numeric patterns near context words
-  /\b([0-9]{6})\b/,  // 6-digit (most common)
-  /\b([0-9]{5})\b/,  // 5-digit
-  /\b([0-9]{4})\b/,  // 4-digit PIN
-  /\b([0-9]{8})\b/,  // 8-digit
-  
-  // Alphanumeric codes (less common)
-  /\b([A-Za-z0-9]{6,8})\b/
-]);
 
 /**
  * Debug levels for logging
