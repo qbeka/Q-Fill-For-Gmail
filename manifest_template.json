@@ -23,7 +23,7 @@
   ],
 
   "oauth2": {
-    "client_id": "YOUR_OAUTH_CLIENT_ID_HERE.apps.googleusercontent.com",
+    "client_id": "PASTE_YOUR_CLIENT_ID.apps.googleusercontent.com",
     "scopes": [
       "https://www.googleapis.com/auth/gmail.readonly"
     ]

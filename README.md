@@ -119,21 +119,21 @@ cp manifest_template.json manifest.json
 
 See [docs/MANIFEST.md](docs/MANIFEST.md) for what each permission does. For **Edge**, load the unpacked extension at `edge://extensions`, copy its ID, and add a second OAuth client in Google Cloud (Chrome extension type) with that ID.
 
-Edit `config/config.js` and replace the placeholder:
-
-```javascript
-OAUTH_CLIENT_ID: 'YOUR_CLIENT_ID_HERE.apps.googleusercontent.com',
-```
-
-Edit `manifest.json` and replace the placeholder in the `oauth2` section:
+**Important:** `chrome.identity` only reads the client ID from **`manifest.json`**, not from `config.js`. Edit `manifest.json`:
 
 ```json
 "oauth2": {
-  "client_id": "YOUR_CLIENT_ID_HERE.apps.googleusercontent.com",
+  "client_id": "123456789012-abcdefghijklmnop.apps.googleusercontent.com",
   "scopes": [
     "https://www.googleapis.com/auth/gmail.readonly"
   ]
 }
+```
+
+Validate your setup:
+
+```bash
+node scripts/validate-setup.mjs
 ```
 
 ### Step 8: Reload and connect
