@@ -5,7 +5,7 @@
  * Uses multi-signal scoring to find the SINGLE best input field.
  * 
  * @fileoverview Content script for detecting and filling verification codes
- * @version 1.1.0
+ * @version 1.2.0
  */
 
 // ============================================================================
@@ -86,31 +86,61 @@ const SKIP_TYPES = new Set([
 
 const MESSAGE_ACTIONS = {
   FILL_CODE: 'fillCode',
-  NO_CODE_FOUND: 'noCodeFound',
+  FILL_FAILED: 'fillFailed',
   CONTENT_SCRIPT_READY: 'contentScriptReady'
 };
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  log('Received:', message.action);
-  
-  if (message.action === MESSAGE_ACTIONS.FILL_CODE && message.code) {
-    const result = fillCode(message.code);
-    logAlways(`Fill result: ${result.success ? 'SUCCESS' : 'FAILED'} - ${result.message}`);
-    sendResponse(result);
-    return true;
-  }
-  
-  if (message.action === MESSAGE_ACTIONS.NO_CODE_FOUND) {
-    showToast('No verification code found in recent emails', 'error');
-    sendResponse({ success: true });
-    return true;
-  }
-  
-  sendResponse({ success: false });
-  return false;
-});
+const MIN_CODE_LENGTH = 4;
+const MAX_CODE_LENGTH = 8;
 
-logAlways('Content script loaded v1.1.0');
+if (!globalThis.__QFILL_INITIALIZED__) {
+  globalThis.__QFILL_INITIALIZED__ = true;
+
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    log('Received:', message.action);
+
+    if (message.action === MESSAGE_ACTIONS.FILL_CODE && message.code) {
+      const result = fillCode(message.code);
+      logAlways(`Fill result: ${result.success ? 'SUCCESS' : 'FAILED'} - ${result.message}`);
+      sendResponse(result);
+      return true;
+    }
+
+    if (message.action === MESSAGE_ACTIONS.FILL_FAILED) {
+      showToast(message.message || 'Could not fill verification code on this page', 'error');
+      sendResponse({ success: true });
+      return true;
+    }
+
+    sendResponse({ success: false, message: 'Unknown action' });
+    return false;
+  });
+
+  document.addEventListener('focusin', (e) => {
+    const target = e.target;
+    if (target?.matches?.('input, textarea, [contenteditable="true"]')) {
+      const score = calculateScore(target, MAX_CODE_LENGTH);
+      if (score >= 30) {
+        globalThis.__QFILL_LAST_FOCUSED__ = target;
+      }
+    }
+  }, true);
+
+  logAlways('Content script loaded v1.2.0');
+}
+
+// ============================================================================
+// TEXT MATCHING
+// ============================================================================
+
+/**
+ * Match keywords on word boundaries (avoids "name" matching "username")
+ */
+function textIncludesKeyword(text, keyword) {
+  if (!text || !keyword) return false;
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?:^|[\\s_\\-.])${escaped}(?:[\\s_\\-.]|$)`, 'i').test(text);
+}
 
 // ============================================================================
 // VISIBILITY CHECKS
@@ -171,6 +201,57 @@ function isInModal(el) {
     if (el.closest(selector)) return true;
   }
   return false;
+}
+
+/**
+ * Walk document including open shadow roots
+ */
+function* walkRoots(root) {
+  yield root;
+  const elements = root.querySelectorAll ? root.querySelectorAll('*') : [];
+  for (const el of elements) {
+    if (el.shadowRoot) {
+      yield* walkRoots(el.shadowRoot);
+    }
+  }
+}
+
+/**
+ * Collect inputs from light DOM and shadow DOM
+ */
+function collectInputs() {
+  const seen = new Set();
+  const inputs = [];
+
+  for (const root of walkRoots(document)) {
+    const nodes = root.querySelectorAll(
+      'input, textarea, [contenteditable="true"], [role="textbox"]'
+    );
+    for (const node of nodes) {
+      if (!seen.has(node)) {
+        seen.add(node);
+        inputs.push(node);
+      }
+    }
+  }
+
+  return inputs;
+}
+
+/**
+ * Skip honeypots and non-interactive fields
+ */
+function isInteractable(el) {
+  if (el.disabled || el.readOnly) return false;
+  if (el.getAttribute('aria-hidden') === 'true') return false;
+
+  const tabIndex = el.getAttribute('tabindex');
+  if (tabIndex === '-1' && document.activeElement !== el) return false;
+
+  const style = window.getComputedStyle(el);
+  if (style.pointerEvents === 'none') return false;
+
+  return true;
 }
 
 // ============================================================================
@@ -265,9 +346,10 @@ function getContextText(input) {
  * Higher score = more likely to be the correct field
  * 
  * @param {HTMLElement} input - Input element to score
+ * @param {number} codeLength - Expected verification code length
  * @returns {number} Score (can be negative)
  */
-function calculateScore(input) {
+function calculateScore(input, codeLength = 6) {
   let score = 0;
   const reasons = [];
   
@@ -339,6 +421,11 @@ function calculateScore(input) {
     score += 100;
     reasons.push('maxLength=1 (OTP digit) +100');
   }
+  // maxLength matches the code we're filling (very strong signal)
+  if (maxLen > 0 && maxLen === codeLength) {
+    score += 95;
+    reasons.push(`maxLength matches code (${maxLen}) +95`);
+  }
   // maxLength 4-8 (typical verification code length)
   else if (maxLen >= 4 && maxLen <= 8) {
     score += 70;
@@ -377,10 +464,29 @@ function calculateScore(input) {
   
   // ========== CONTEXTUAL SIGNALS ==========
   
-  // Currently focused input (user is likely interacting with it)
+  // Currently focused or recently focused verification field
   if (document.activeElement === input) {
     score += 80;
     reasons.push('currently focused +80');
+  } else if (globalThis.__QFILL_LAST_FOCUSED__ === input) {
+    score += 55;
+    reasons.push('recently focused +55');
+  }
+
+  // Common OTP container patterns
+  const otpContainer = input.closest(
+    '[class*="otp"], [class*="pin-input"], [class*="code-input"], [data-otp], [data-testid*="otp"], [id*="otp"]'
+  );
+  if (otpContainer) {
+    score += 45;
+    reasons.push('inside OTP container +45');
+  }
+
+  // aria-label like "Digit 3 of 6"
+  const ariaLabel = (input.getAttribute('aria-label') || '').toLowerCase();
+  if (/digit|character|position/.test(ariaLabel) && /of|\//.test(ariaLabel)) {
+    score += 40;
+    reasons.push('aria-label digit position +40');
   }
   
   // In a modal/dialog (often verification flows use modals)
@@ -412,7 +518,7 @@ function calculateScore(input) {
   
   // Strong negative keywords in attributes (definitely not a code field)
   for (const kw of STRONG_NEGATIVE) {
-    if (attrText.includes(kw)) {
+    if (textIncludesKeyword(attrText, kw)) {
       score -= 100;
       reasons.push(`NEGATIVE: "${kw}" in attrs -100`);
     }
@@ -420,7 +526,7 @@ function calculateScore(input) {
   
   // Strong negative keywords in context
   for (const kw of STRONG_NEGATIVE) {
-    if (contextText.includes(kw) && !STRONG_KEYWORDS.some(sk => contextText.includes(sk))) {
+    if (textIncludesKeyword(contextText, kw) && !STRONG_KEYWORDS.some(sk => contextText.includes(sk))) {
       score -= 50;
       reasons.push(`NEGATIVE: "${kw}" in context -50`);
     }
@@ -428,7 +534,7 @@ function calculateScore(input) {
   
   // Weak negative keywords
   for (const kw of WEAK_NEGATIVE) {
-    if (combinedText.includes(kw)) {
+    if (textIncludesKeyword(combinedText, kw)) {
       score -= 30;
       reasons.push(`weak negative: "${kw}" -30`);
     }
@@ -477,26 +583,21 @@ function calculateScore(input) {
  * Find the single best input for verification code
  * @returns {{ input: HTMLElement, score: number } | null}
  */
-function findBestInput() {
-  const inputs = document.querySelectorAll('input, [contenteditable="true"]');
+function findBestInput(codeLength = 6) {
+  const inputs = collectInputs();
   let bestCandidate = null;
   let bestScore = -Infinity;
   
   for (const input of inputs) {
-    // Skip invalid input types
     if (input.tagName === 'INPUT') {
       const type = (input.type || 'text').toLowerCase();
       if (SKIP_TYPES.has(type)) continue;
     }
     
-    // Skip disabled/readonly
-    if (input.disabled || input.readOnly) continue;
-    
-    // Skip invisible
+    if (!isInteractable(input)) continue;
     if (!isVisible(input)) continue;
     
-    // Calculate score
-    const score = calculateScore(input);
+    const score = calculateScore(input, codeLength);
     
     // Track best candidate
     if (score > bestScore) {
@@ -505,8 +606,8 @@ function findBestInput() {
     }
   }
   
-  // Only return if score is positive (indicates it's likely a verification field)
-  if (bestCandidate && bestCandidate.score > 0) {
+  // Require meaningful confidence to avoid filling random text fields
+  if (bestCandidate && bestCandidate.score >= 40) {
     logAlways(`Best input found: score=${bestCandidate.score}`, 
       bestCandidate.input.id || bestCandidate.input.name || bestCandidate.input.placeholder || '(unnamed)');
     return bestCandidate;
@@ -517,69 +618,165 @@ function findBestInput() {
 }
 
 /**
- * Find OTP input group (multiple single-character inputs in a row)
- * @returns {HTMLElement[]}
+ * Find single-character OTP inputs
  */
-function findOTPGroup() {
-  const allInputs = document.querySelectorAll('input');
-  const singleCharInputs = [];
-  
-  for (const input of allInputs) {
-    if (!isVisible(input)) continue;
-    if (input.disabled || input.readOnly) continue;
-    
-    // Check for single character input
+function findSingleCharInputs(codeLength) {
+  const results = [];
+
+  for (const input of collectInputs()) {
+    if (input.tagName !== 'INPUT') continue;
+    if (!isVisible(input) || !isInteractable(input)) continue;
+
+    const type = (input.type || 'text').toLowerCase();
+    if (SKIP_TYPES.has(type)) continue;
+
     const maxLen = input.maxLength;
     const size = input.size;
-    
-    if (maxLen === 1 || (size === 1 && (maxLen === -1 || maxLen === 1))) {
-      singleCharInputs.push(input);
+    const isSingle = maxLen === 1 || (size === 1 && (maxLen === -1 || maxLen === 1));
+
+    if (isSingle && calculateScore(input, codeLength) > -80) {
+      results.push(input);
     }
   }
-  
-  // Need 4-8 single char inputs to be considered an OTP group
-  if (singleCharInputs.length < 4 || singleCharInputs.length > 8) {
-    return [];
+
+  return results;
+}
+
+/**
+ * Cluster OTP inputs by shared container (avoids mixing unrelated digit fields)
+ */
+function clusterOTPInputs(inputs) {
+  const clusters = new Map();
+
+  for (const input of inputs) {
+    const container = input.closest(
+      '[class*="otp"], [class*="pin"], [class*="code"], [data-otp], [role="group"], form, fieldset'
+    ) || input.parentElement?.parentElement || input.parentElement;
+
+    if (!clusters.has(container)) clusters.set(container, []);
+    clusters.get(container).push(input);
   }
-  
-  // Sort by visual position (left to right, top to bottom)
-  singleCharInputs.sort((a, b) => {
+
+  return [...clusters.values()];
+}
+
+/**
+ * Sort inputs left-to-right, top-to-bottom
+ */
+function sortByVisualPosition(inputs) {
+  return [...inputs].sort((a, b) => {
     const rectA = a.getBoundingClientRect();
     const rectB = b.getBoundingClientRect();
-    
-    // If on same row (within 20px), sort by left position
     if (Math.abs(rectA.top - rectB.top) < 20) {
       return rectA.left - rectB.left;
     }
     return rectA.top - rectB.top;
   });
-  
-  // Verify all inputs are roughly aligned (same row)
-  const firstRect = singleCharInputs[0].getBoundingClientRect();
-  const allAligned = singleCharInputs.every(input => {
+}
+
+/**
+ * Validate a cluster is one aligned OTP row
+ */
+function validateOTPRow(inputs) {
+  if (inputs.length < 4 || inputs.length > 8) return null;
+
+  const sorted = sortByVisualPosition(inputs);
+  const firstRect = sorted[0].getBoundingClientRect();
+
+  const aligned = sorted.filter(input => {
     const rect = input.getBoundingClientRect();
     return Math.abs(rect.top - firstRect.top) < 30;
   });
-  
-  if (!allAligned) {
-    log('Single char inputs found but not aligned');
-    return [];
+
+  if (aligned.length < 4) return null;
+
+  for (let i = 1; i < aligned.length; i++) {
+    const prevRect = aligned[i - 1].getBoundingClientRect();
+    const currRect = aligned[i].getBoundingClientRect();
+    if (currRect.left - prevRect.right > 100) return null;
   }
-  
-  // Verify reasonable spacing (not too far apart)
-  for (let i = 1; i < singleCharInputs.length; i++) {
-    const prevRect = singleCharInputs[i - 1].getBoundingClientRect();
-    const currRect = singleCharInputs[i].getBoundingClientRect();
-    const gap = currRect.left - prevRect.right;
-    
-    if (gap > 100) {
-      log('OTP inputs too far apart');
-      return [];
+
+  return aligned;
+}
+
+/**
+ * Find the best OTP input group on the page
+ * @param {number} codeLength
+ * @returns {HTMLElement[]}
+ */
+function findOTPGroup(codeLength = 6) {
+  const singles = findSingleCharInputs(codeLength);
+  if (singles.length < 4) return [];
+
+  const clusters = clusterOTPInputs(singles);
+  let bestGroup = [];
+  let bestScore = -Infinity;
+
+  for (const cluster of clusters) {
+    const row = validateOTPRow(cluster);
+    if (!row) continue;
+
+    const avgScore = row.reduce((sum, input) => sum + calculateScore(input, codeLength), 0) / row.length;
+    if (avgScore < 40) continue;
+
+    const lengthBonus = row.length === codeLength ? 25 : 0;
+    const total = avgScore + lengthBonus;
+
+    if (total > bestScore) {
+      bestScore = total;
+      bestGroup = row;
     }
   }
-  
-  logAlways(`Found OTP group: ${singleCharInputs.length} aligned inputs`);
-  return singleCharInputs;
+
+  if (bestGroup.length) {
+    logAlways(`Found OTP group: ${bestGroup.length} inputs (score ${bestScore.toFixed(0)})`);
+  }
+
+  return bestGroup;
+}
+
+/**
+ * Score an OTP group relative to a single-field candidate
+ */
+function scoreOTPGroup(inputs, codeLength) {
+  if (!inputs.length) return 0;
+  const avg = inputs.reduce((sum, input) => sum + calculateScore(input, codeLength), 0) / inputs.length;
+  const lengthMatch = inputs.length === codeLength ? 35 : 0;
+  return avg + (inputs.length >= 6 ? 30 : 15) + lengthMatch;
+}
+
+/**
+ * Pick the best fill strategy for this page
+ * @param {string} code
+ * @returns {{ type: 'otp'|'single', inputs?: HTMLElement[], input?: HTMLElement, score?: number }|null}
+ */
+function chooseFillStrategy(code) {
+  const codeLength = code.length;
+  const otpGroup = findOTPGroup(codeLength);
+  const best = findBestInput(codeLength);
+  const otpScore = otpGroup.length >= codeLength ? scoreOTPGroup(otpGroup, codeLength) : 0;
+  const singleScore = best?.score || 0;
+
+  // autocomplete=one-time-code on a single field beats split OTP boxes
+  const hasOneTimeCode = best?.input?.autocomplete === 'one-time-code';
+
+  if (hasOneTimeCode && best) {
+    return { type: 'single', input: best.input, score: singleScore };
+  }
+
+  if (otpGroup.length >= codeLength && otpScore >= 70 && otpScore >= singleScore - 10) {
+    return { type: 'otp', inputs: otpGroup.slice(0, codeLength) };
+  }
+
+  if (best && singleScore >= 40) {
+    return { type: 'single', input: best.input, score: singleScore };
+  }
+
+  if (otpGroup.length >= codeLength && otpScore >= 50) {
+    return { type: 'otp', inputs: otpGroup.slice(0, codeLength) };
+  }
+
+  return null;
 }
 
 // ============================================================================
@@ -587,70 +784,115 @@ function findOTPGroup() {
 // ============================================================================
 
 /**
+ * Read normalized value from an input
+ */
+function getInputValue(input) {
+  if (input.getAttribute('contenteditable') === 'true') {
+    return (input.textContent || '').replace(/\s/g, '');
+  }
+  return (input.value || '').replace(/\s/g, '');
+}
+
+/**
+ * Dispatch framework-friendly input events
+ */
+function dispatchInputEvents(input, value) {
+  try {
+    input.dispatchEvent(new InputEvent('input', {
+      bubbles: true,
+      cancelable: true,
+      inputType: 'insertText',
+      data: value
+    }));
+  } catch {
+    input.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+  }
+  input.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+}
+
+/**
  * Set value on input with comprehensive event dispatching
  * @param {HTMLElement} input 
  * @param {string} value 
  * @returns {boolean}
  */
+function getNativeValueSetter(input) {
+  const proto = input instanceof HTMLTextAreaElement
+    ? HTMLTextAreaElement.prototype
+    : HTMLInputElement.prototype;
+  return Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+}
+
+/**
+ * Simulate per-character typing (works with strict React controlled inputs)
+ */
+function simulateTyping(input, text) {
+  const nativeSetter = getNativeValueSetter(input);
+  if (!nativeSetter) return false;
+
+  input.focus();
+  nativeSetter.call(input, '');
+
+  for (const char of text) {
+    const next = getInputValue(input) + char;
+    nativeSetter.call(input, next);
+    dispatchInputEvents(input, char);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: char, bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keyup', { key: char, bubbles: true }));
+  }
+
+  return getInputValue(input) === text;
+}
+
 function setValue(input, value) {
   const sanitized = String(value).replace(/[^a-zA-Z0-9]/g, '');
+  if (!sanitized) return false;
   
   try {
-    // Focus the input
     input.focus();
-    
-    // Select any existing content
     if (input.select) input.select();
     
-    // Clear existing value
-    input.value = '';
+    if (input.getAttribute('contenteditable') === 'true') {
+      input.textContent = sanitized;
+      dispatchInputEvents(input, sanitized);
+      return getInputValue(input) === sanitized;
+    }
     
-    // Try using the native setter (works with React/Angular/Vue)
-    const nativeSetter = Object.getOwnPropertyDescriptor(
-      window.HTMLInputElement.prototype, 'value'
-    )?.set;
+    const nativeSetter = getNativeValueSetter(input);
     
     if (nativeSetter) {
+      nativeSetter.call(input, '');
       nativeSetter.call(input, sanitized);
     } else {
       input.value = sanitized;
     }
     
-    // Also set the attribute
     input.setAttribute('value', sanitized);
-    
-    // Handle contenteditable
-    if (input.getAttribute('contenteditable') === 'true') {
-      input.textContent = sanitized;
-    }
-    
-    // Dispatch comprehensive events for framework compatibility
-    
-    // Input event (most important for React)
-    const inputEvent = new Event('input', { bubbles: true, cancelable: true });
-    input.dispatchEvent(inputEvent);
-    
-    // Change event
-    const changeEvent = new Event('change', { bubbles: true, cancelable: true });
-    input.dispatchEvent(changeEvent);
-    
-    // Keyboard events
-    for (const char of sanitized) {
-      input.dispatchEvent(new KeyboardEvent('keydown', { key: char, bubbles: true }));
-      input.dispatchEvent(new KeyboardEvent('keypress', { key: char, bubbles: true }));
-      input.dispatchEvent(new KeyboardEvent('keyup', { key: char, bubbles: true }));
-    }
-    
-    // Focus/blur cycle can trigger validation
-    input.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
-    input.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
+    dispatchInputEvents(input, sanitized);
     input.focus();
     
-    return true;
+    if (getInputValue(input) === sanitized) return true;
+
+    // Fallback: character-by-character for stubborn frameworks
+    return simulateTyping(input, sanitized);
   } catch (e) {
     logAlways('Error setting value:', e.message);
     return false;
   }
+}
+
+/**
+ * Fill one OTP digit and advance focus
+ */
+function setOTPDigit(input, char, isLast) {
+  const ok = setValue(input, char);
+  if (ok && !isLast) {
+    const next = input.nextElementSibling;
+    if (next?.tagName === 'INPUT' && next.maxLength === 1) {
+      next.focus();
+    }
+  }
+  return ok;
 }
 
 // ============================================================================
@@ -671,66 +913,64 @@ function fillCode(code) {
   
   const sanitized = String(code).replace(/[^a-zA-Z0-9]/g, '');
   
-  if (sanitized.length < 4 || sanitized.length > 8) {
+  if (sanitized.length < MIN_CODE_LENGTH || sanitized.length > MAX_CODE_LENGTH) {
     return { success: false, message: `Invalid code length: ${sanitized.length}` };
   }
   
-  logAlways(`Attempting to fill code: ${sanitized} (${sanitized.length} chars)`);
+  logAlways(`Attempting to fill code (${sanitized.length} chars)`);
   
-  // STRATEGY 1: Check for OTP group (multiple single-char inputs)
-  const otpGroup = findOTPGroup();
+  const strategy = chooseFillStrategy(sanitized);
   
-  if (otpGroup.length > 0) {
-    // Fill OTP group
-    if (sanitized.length > otpGroup.length) {
-      logAlways(`Code (${sanitized.length}) longer than OTP fields (${otpGroup.length})`);
-    }
-    
-    const fillCount = Math.min(sanitized.length, otpGroup.length);
-    
-    for (let i = 0; i < fillCount; i++) {
-      setValue(otpGroup[i], sanitized[i]);
-    }
-    
-    // Focus the last filled input (or next empty one)
-    const focusIndex = Math.min(fillCount, otpGroup.length - 1);
-    otpGroup[focusIndex].focus();
-    
-    showSuccess(otpGroup.slice(0, fillCount));
-    showToast('Code filled', 'success');
-    
-    return { 
-      success: true, 
-      message: `Filled ${fillCount} OTP digits` 
+  if (!strategy) {
+    return {
+      success: false,
+      message: 'No verification input found on this page'
     };
   }
   
-  // STRATEGY 2: Find single best input
-  const best = findBestInput();
-  
-  if (!best) {
-    showToast('No verification input found on this page', 'error');
-    return { 
-      success: false, 
-      message: 'No suitable input field found' 
+  if (strategy.type === 'otp') {
+    let filledCount = 0;
+    const filledInputs = [];
+    
+    for (let i = 0; i < strategy.inputs.length; i++) {
+      const isLast = i === strategy.inputs.length - 1;
+      if (setOTPDigit(strategy.inputs[i], sanitized[i], isLast)) {
+        filledCount++;
+        filledInputs.push(strategy.inputs[i]);
+      }
+    }
+    
+    if (filledCount === strategy.inputs.length) {
+      strategy.inputs[strategy.inputs.length - 1].focus();
+      showSuccess(filledInputs);
+      showToast('Code filled', 'success');
+      return { success: true, message: `Filled ${filledCount} OTP digits` };
+    }
+    
+    return {
+      success: false,
+      message: `Only filled ${filledCount} of ${strategy.inputs.length} OTP fields`
     };
   }
   
-  // Fill ONLY the best input
-  const filled = setValue(best.input, sanitized);
-  
+  let filled = setValue(strategy.input, sanitized);
+
+  if (!filled) {
+    filled = simulateTyping(strategy.input, sanitized);
+  }
+
   if (filled) {
-    showSuccess([best.input]);
+    showSuccess([strategy.input]);
     showToast('Code filled', 'success');
-    return { 
-      success: true, 
-      message: `Filled input (score: ${best.score})` 
+    return {
+      success: true,
+      message: `Filled input (score: ${strategy.score})`
     };
   }
-  
-  return { 
-    success: false, 
-    message: 'Failed to set input value' 
+
+  return {
+    success: false,
+    message: 'Failed to set input value'
   };
 }
 
@@ -849,12 +1089,14 @@ function showToast(message, type = 'info') {
 // INITIALIZATION
 // ============================================================================
 
-// Send ready signal
-try {
-  chrome.runtime.sendMessage({ 
-    action: MESSAGE_ACTIONS.CONTENT_SCRIPT_READY, 
-    url: window.location.href 
-  });
-} catch (e) {
-  // Extension context may not be available
+if (!globalThis.__QFILL_READY_SENT__) {
+  globalThis.__QFILL_READY_SENT__ = true;
+  try {
+    chrome.runtime.sendMessage({
+      action: MESSAGE_ACTIONS.CONTENT_SCRIPT_READY,
+      url: window.location.href
+    });
+  } catch (e) {
+    // Extension context may not be available
+  }
 }

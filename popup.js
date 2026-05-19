@@ -28,6 +28,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     statusText: document.getElementById('statusText')
   };
   
+  // Prevents overlapping checks and animation races
+  let checkInProgress = false;
+  let pendingResultTimeout = null;
+
   // Initialize the popup
   initialize();
   
@@ -78,56 +82,108 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   
   /**
-   * Handle status updates from the background script
+   * Handle status updates from the background script (single source of truth)
    */
   function handleCheckingStatusUpdate(message) {
+    if (!checkInProgress) return;
+
+    if (pendingResultTimeout) {
+      clearTimeout(pendingResultTimeout);
+      pendingResultTimeout = null;
+    }
+
     switch (message.status) {
       case 'checking':
-        // Already handled by the visualization
+        elements.statusText.textContent = 'Searching for verification codes...';
+        animateLoadingBar(65);
         break;
-        
+
       case 'noEmails':
-        // Show error in the visualization
-        elements.statusText.textContent = 'No emails found';
-        animateLoadingBar(100, true);
-        showErrorVisualization();
-        showError('No emails found in your inbox');
-        resetButtonAfterDelay();
+        finishCheckWithError(
+          'No emails found',
+          'No emails found in your inbox'
+        );
         break;
-        
+
       case 'codeFound':
-        // Show success in the visualization
-        elements.statusText.textContent = 'Code found!';
-        animateLoadingBar(100);
-        elements.formInput.textContent = message.code || '123456';
-        elements.formInput.classList.add('filled');
-        
-        // Pulse the form to indicate success
-        elements.formInput.style.animation = 'formPulseAnimation 0.5s ease-in-out';
-        
-        // Show success message
-        showSuccess('Verification code detected and applied successfully!');
-        resetButtonAfterDelay();
+        finishCheckWithSuccess(message.code, true);
         break;
-        
+
+      case 'fillFailed':
+        finishCheckWithPartialSuccess(
+          message.code,
+          message.error || 'Code found but could not fill the form on this page'
+        );
+        break;
+
       case 'noCodeFound':
-        // Show error in the visualization
-        elements.statusText.textContent = 'No verification code found';
-        animateLoadingBar(100, true);
-        showErrorVisualization();
-        showError('No verification code found in the most recent email');
-        resetButtonAfterDelay();
+        finishCheckWithError(
+          'No verification code found',
+          'No verification code found in your recent emails'
+        );
         break;
-        
+
       case 'error':
-        // Show error in the visualization
-        elements.statusText.textContent = 'Error checking emails';
-        animateLoadingBar(100, true);
-        showErrorVisualization();
-        showError(message.error || 'Failed to check emails');
-        resetButtonAfterDelay();
+        finishCheckWithError(
+          'Error checking emails',
+          message.error || 'Failed to check emails'
+        );
         break;
     }
+  }
+
+  function finishCheck() {
+    checkInProgress = false;
+    resetButtonAfterDelay();
+  }
+
+  function finishCheckWithSuccess(code, filled) {
+    elements.statusText.textContent = 'Code applied!';
+    animateLoadingBar(100);
+    runSuccessVisualization(code);
+    showSuccess(
+      filled
+        ? 'Verification code applied to the page behind this popup.'
+        : 'Verification code found.'
+    );
+    finishCheck();
+  }
+
+  function finishCheckWithPartialSuccess(code, errorMessage) {
+    elements.statusText.textContent = 'Code found';
+    animateLoadingBar(100, true);
+    if (code) {
+      elements.codeParticle.textContent = code;
+    }
+    showErrorVisualization();
+    showError(errorMessage);
+    finishCheck();
+  }
+
+  function finishCheckWithError(statusText, userMessage) {
+    elements.statusText.textContent = statusText;
+    animateLoadingBar(100, true);
+    showErrorVisualization();
+    showError(userMessage);
+    finishCheck();
+  }
+
+  /**
+   * Success animation driven by the real result (not a timer guess)
+   */
+  function runSuccessVisualization(code) {
+    const displayCode = code || '------';
+    elements.codeParticle.textContent = displayCode;
+    elements.codeParticle.classList.remove('error');
+    elements.codeParticle.style.opacity = '1';
+    elements.codeParticle.style.animation = 'codeExtractAnimation 1.6s ease-in-out forwards';
+
+    setTimeout(() => {
+      elements.formInput.textContent = displayCode;
+      elements.formInput.classList.add('filled');
+      elements.formInput.classList.remove('error');
+      elements.formInput.style.animation = 'formPulseAnimation 0.5s ease-in-out';
+    }, 1200);
   }
   
   /**
@@ -213,69 +269,59 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   
   /**
-   * Force check emails immediately with visualization
-   * The actual code filling happens in parallel with the visualization
+   * Capture the tab the user was on when they opened the popup
+   */
+  function getTargetTabId() {
+    return new Promise((resolve) => {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        resolve(tabs?.[0]?.id ?? null);
+      });
+    });
+  }
+
+  /**
+   * Force check emails — visualization follows the real background result
    */
   async function handleCheckEmails() {
+    if (checkInProgress) return;
+
     try {
-      // Disable the button and show loading state
+      checkInProgress = true;
       elements.checkEmailsButton.disabled = true;
       elements.checkEmailsButton.innerHTML = 'Checking... <span class="checking-animation pulse">⟳</span>';
-      
-      // Hide any previous messages
+
       hideMessages();
-      
-      // Show the visualization container
       elements.visualizationContainer.style.display = 'block';
-      
-      // Reset visualization
       resetVisualization();
-      
-      // Update status text
+
+      const targetTabId = await getTargetTabId();
+
       elements.statusText.textContent = 'Connecting to Gmail...';
-      
-      // Animate loading bar to 30%
-      animateLoadingBar(30);
-      
-      // Small delay before starting scanning animation
-      await new Promise(resolve => setTimeout(resolve, 800));
-      
-      // Update status text
-      elements.statusText.textContent = 'Searching for verification codes...';
-      
-      // Animate loading bar to 60%
-      animateLoadingBar(60);
-      
-      // Start scan animation
+      animateLoadingBar(25);
       startScanAnimation();
-      
-      // Wait for scan animation to start before sending the actual request
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      // Send the request to check emails (will run in parallel with our visualization)
-      sendMessage({ action: 'forceCheckEmails' });
-      
-      // Continue with visualization while the background process runs
-      await new Promise(resolve => setTimeout(resolve, 1200));
-      
-      // Animate loading bar to 90%
-      animateLoadingBar(90);
-      
-      // Start code extraction animation
-      await startCodeExtractionAnimation();
-      
-      // We don't know the actual result yet, so we'll wait for the message from the background script
-      // The animation is complete, and the real result will be handled by the message listener
-      
+
+      await sendMessage({
+        action: 'forceCheckEmails',
+        tabId: targetTabId
+      });
+
+      elements.statusText.textContent = 'Searching for verification codes...';
+      animateLoadingBar(45);
+
+      // Safety net if background never responds
+      pendingResultTimeout = setTimeout(() => {
+        if (!checkInProgress) return;
+        finishCheckWithError(
+          'Request timed out',
+          'Checking took too long. Try again.'
+        );
+      }, 30000);
     } catch (error) {
-      // Handle error case
-      elements.statusText.textContent = 'Error checking emails';
-      animateLoadingBar(100, true);
-      
-      showErrorVisualization();
-      showError('Failed to check emails');
+      finishCheckWithError(
+        'Error checking emails',
+        'Failed to check emails'
+      );
       console.error('Check emails error:', error);
-      resetButtonAfterDelay();
     }
   }
   
@@ -320,25 +366,6 @@ document.addEventListener('DOMContentLoaded', async () => {
    */
   function startScanAnimation() {
     elements.scanEffect.style.animation = 'scanAnimation 2s ease-in-out';
-  }
-  
-  /**
-   * Animate the code extraction and form filling
-   * We'll show the actual code or placeholder depending on the result
-   */
-  async function startCodeExtractionAnimation() {
-    return new Promise(resolve => {
-      // Extract code animation
-      elements.codeParticle.style.animation = 'codeExtractAnimation 2s ease-in-out forwards';
-      
-      // Wait for animation to reach midpoint, then change form input
-      // The actual code text will be updated when we get the result from background
-      setTimeout(() => {
-        // We don't set the content here, it will be set by the message handler
-        // based on whether a code was found or not
-        resolve();
-      }, 1200);
-    });
   }
   
   /**

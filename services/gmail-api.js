@@ -8,7 +8,7 @@
  * @version 1.1.0
  */
 
-import { TIME, CODE_VALIDATION } from '../utils/constants.js';
+import { TIME, CODE_VALIDATION, GMAIL_VERIFICATION_QUERY } from '../utils/constants.js';
 
 /**
  * GmailAPI Class
@@ -107,16 +107,73 @@ class GmailAPI {
   }
   
   /**
-   * Get the most recent Gmail message only
-   * @returns {Promise<Array>} Array with single most recent message
+   * List messages matching a Gmail search query
+   * @param {string} query - Gmail search query
+   * @param {number} maxResults
+   * @returns {Promise<Array>}
    */
-  async getRecentMessages() {
+  async listMessages(query, maxResults = CODE_VALIDATION.MAX_GMAIL_RESULTS) {
+    try {
+      const token = await this.ensureAuthenticated(false);
+      const params = new URLSearchParams({
+        maxResults: String(maxResults),
+        q: query
+      });
+
+      const response = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages?${params}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Gmail API error:', errorText);
+        throw new Error(`Gmail API error: ${response.status} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      return data.messages || [];
+    } catch (error) {
+      console.error('Error listing Gmail messages:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get recent verification-related emails, then fall back to inbox
+   * @returns {Promise<Array>}
+   */
+  async getVerificationMessages() {
+    const verification = await this.listMessages(
+      GMAIL_VERIFICATION_QUERY,
+      CODE_VALIDATION.MAX_GMAIL_RESULTS
+    );
+
+    if (verification.length > 0) {
+      console.log(`Found ${verification.length} verification-related email(s)`);
+      return verification;
+    }
+
+    console.log('No verification-tagged emails; falling back to recent inbox');
+    return this.getRecentMessages();
+  }
+
+  /**
+   * Get recent Gmail messages (newest first)
+   * @param {number} maxResults - How many messages to fetch
+   * @returns {Promise<Array>} Message stubs with id
+   */
+  async getRecentMessages(maxResults = CODE_VALIDATION.MAX_GMAIL_RESULTS) {
     try {
       const token = await this.ensureAuthenticated(false);
       
-      // Fetch only the single most recent email
       const response = await fetch(
-        `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=1`,
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${maxResults}`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -139,7 +196,7 @@ class GmailAPI {
         return [];
       }
       
-      console.log('Fetched most recent email');
+      console.log(`Fetched ${data.messages.length} recent email(s)`);
       return data.messages;
     } catch (error) {
       console.error('Error fetching Gmail messages:', error);
