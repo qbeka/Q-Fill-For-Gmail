@@ -37,4 +37,5 @@ Copy `manifest_template.json` to `manifest.json` after setup. Every permission i
 
 - `default_locale` is `en`.
 - UI strings live in `_locales/<lang>/messages.json`.
-- Replace `YOUR_OAUTH_CLIENT_ID_HERE` in the template before loading the extension.
+- Replace `PASTE_YOUR_CLIENT_ID.apps.googleusercontent.com` in `manifest.json` (the full string from Google Cloud, not the extension ID).
+- Run `node scripts/validate-setup.mjs` before loading the extension.

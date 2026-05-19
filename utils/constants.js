@@ -29,20 +29,27 @@ export const CODE_VALIDATION = {
   MIN_EMAIL_CONTENT_LENGTH: 20,
   
   /** Recent emails to scan (newest first) for a verification code */
-  MAX_GMAIL_RESULTS: 5,
+  MAX_GMAIL_RESULTS: 15,
 
   /** Max age of emails to consider (Gmail query: newer_than:Nd) */
-  GMAIL_MAX_AGE_DAYS: 2
+  GMAIL_MAX_AGE_DAYS: 7
 };
 
 /**
- * Gmail search query prioritizing verification-related messages
+ * Gmail search — verification-related (broad; OTP subject lines, etc.)
  */
 export const GMAIL_VERIFICATION_QUERY = Object.freeze(
-  'newer_than:2d (' +
-    'subject:(verification OR verify OR code OR OTP OR otp OR 2fa OR confirm OR security OR passcode) OR ' +
-    '"verification code" OR "one-time code" OR "one time code" OR "security code"' +
+  `newer_than:${CODE_VALIDATION.GMAIL_MAX_AGE_DAYS}d (` +
+    'subject:(otp OR OTP OR verification OR verify OR code OR 2fa OR confirm OR security OR passcode) OR ' +
+    '"verification code" OR "your code" OR "one-time" OR "one time" OR "security code"' +
   ')'
+);
+
+/**
+ * Recent inbox scan (no subject filter) — catches self-sent tests and odd senders
+ */
+export const GMAIL_RECENT_QUERY = Object.freeze(
+  `newer_than:${CODE_VALIDATION.GMAIL_MAX_AGE_DAYS}d in:anywhere`
 );
 
 /**

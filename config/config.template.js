@@ -9,7 +9,10 @@
  */
 
 const CONFIG = {
-  OAUTH_CLIENT_ID: 'YOUR_OAUTH_CLIENT_ID_HERE.apps.googleusercontent.com',
+  /**
+   * OAuth Client ID is read from manifest.json → oauth2.client_id (required by Chrome).
+   * Do not put the client ID here — edit manifest.json after copying from manifest_template.json.
+   */
 
   OAUTH_SCOPES: [
     'https://www.googleapis.com/auth/gmail.readonly'

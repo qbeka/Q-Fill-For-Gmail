@@ -14,10 +14,16 @@ import {
 } from './utils/constants.js';
 import { t } from './utils/i18n.js';
 import { CONFIG } from './config/config.js';
+import {
+  getManifestClientId,
+  getOAuthSetupError,
+  explainOAuthError
+} from './utils/oauth-config.js';
 
 class BackgroundManager {
   constructor() {
-    this.gmailApi = new GmailAPI(CONFIG.OAUTH_CLIENT_ID, CONFIG.OAUTH_SCOPES);
+    const clientId = getManifestClientId();
+    this.gmailApi = new GmailAPI(clientId, CONFIG.OAUTH_SCOPES);
     this.storage = new StorageManager();
     this.isCheckingEmails = false;
     this.init();
@@ -64,12 +70,21 @@ class BackgroundManager {
   }
 
   async handleAuthenticate(sendResponse) {
+    const setupError = getOAuthSetupError();
+    if (setupError) {
+      console.error('[Q-Fill] OAuth setup:', setupError);
+      sendResponse({ success: false, error: setupError });
+      return;
+    }
+
     try {
       await this.gmailApi.getToken(true);
       await this.storage.set('isAuthenticated', true);
       sendResponse({ success: true });
     } catch (error) {
-      sendResponse({ success: false, error: error.message });
+      const message = explainOAuthError(error?.message || String(error));
+      console.error('[Q-Fill] Auth failed:', message);
+      sendResponse({ success: false, error: message });
     }
   }
 
@@ -167,9 +182,9 @@ class BackgroundManager {
       const message = await this.gmailApi.getMessage(messageId);
       if (!message?.payload) return null;
 
-      const { subject, from, text } = toPlainText(message);
+      const { subject, from, text, body } = toPlainText(message);
       console.log('[Q-Fill] From:', from, '| Subject:', subject);
-      return extractVerificationCode(text, subject);
+      return extractVerificationCode(text || body, subject);
     } catch (error) {
       console.error('[Q-Fill] process message:', error);
       return null;

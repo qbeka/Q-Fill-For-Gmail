@@ -8,7 +8,12 @@
  * @version 1.1.0
  */
 
-import { TIME, CODE_VALIDATION, GMAIL_VERIFICATION_QUERY } from '../utils/constants.js';
+import {
+  TIME,
+  CODE_VALIDATION,
+  GMAIL_VERIFICATION_QUERY,
+  GMAIL_RECENT_QUERY
+} from '../utils/constants.js';
 
 /**
  * GmailAPI Class
@@ -145,22 +150,33 @@ class GmailAPI {
   }
 
   /**
-   * Get recent verification-related emails, then fall back to inbox
-   * @returns {Promise<Array>}
+   * Merge recent inbox + verification-tagged messages (deduped, newest first).
+   * @returns {Promise<Array<{ id: string }>>}
    */
   async getVerificationMessages() {
-    const verification = await this.listMessages(
-      GMAIL_VERIFICATION_QUERY,
-      CODE_VALIDATION.MAX_GMAIL_RESULTS
-    );
+    const limit = CODE_VALIDATION.MAX_GMAIL_RESULTS;
 
-    if (verification.length > 0) {
-      console.log(`Found ${verification.length} verification-related email(s)`);
-      return verification;
+    const [recent, tagged] = await Promise.all([
+      this.listMessages(GMAIL_RECENT_QUERY, limit).catch(() => []),
+      this.listMessages(GMAIL_VERIFICATION_QUERY, limit).catch(() => [])
+    ]);
+
+    const seen = new Set();
+    const merged = [];
+
+    for (const msg of [...tagged, ...recent]) {
+      if (msg?.id && !seen.has(msg.id)) {
+        seen.add(msg.id);
+        merged.push(msg);
+      }
     }
 
-    console.log('No verification-tagged emails; falling back to recent inbox');
-    return this.getRecentMessages();
+    console.log(
+      `[Q-Fill] Scanning ${merged.length} message(s) ` +
+      `(${tagged.length} tagged, ${recent.length} recent)`
+    );
+
+    return merged;
   }
 
   /**
