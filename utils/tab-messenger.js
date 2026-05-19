@@ -79,7 +79,7 @@ async function injectContentScript(tabId) {
   try {
     await chrome.scripting.executeScript({
       target: { tabId },
-      files: ['content.js']
+      files: ['content/inject-loader.js']
     });
 
     await new Promise(r => setTimeout(r, TIME.INJECTION_RETRY_DELAY_MS));

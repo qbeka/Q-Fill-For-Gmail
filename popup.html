@@ -736,7 +736,7 @@
   <div class="container">
     <div class="header">
       <img src="icons/icon48.png" alt="Logo" class="logo">
-      <h1>Q-Fill for Gmail</h1>
+      <h1 data-i18n="extensionName">Q-Fill for Gmail</h1>
       <div id="statusIndicator" class="status-indicator">Disconnected</div>
     </div>
     
@@ -745,9 +745,9 @@
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M22 6C22 4.9 21.1 4 20 4H4C2.9 4 2 4.9 2 6V18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6ZM20 6L12 11L4 6H20ZM20 18H4V8L12 13L20 8V18Z" fill="currentColor"/>
         </svg>
-        Gmail Connection
+        <span data-i18n="cardGmailTitle">Gmail Connection</span>
       </div>
-      <p id="connectionStatus">Connect to Gmail to automatically extract verification codes from your inbox.</p>
+      <p id="connectionStatus" data-i18n="connectionStatusDisconnected">Connect to Gmail to extract verification codes.</p>
       <div class="button-group">
         <button id="connectButton" class="button">Connect to Gmail</button>
         <button id="disconnectButton" class="button secondary hidden">Disconnect</button>
@@ -808,18 +808,18 @@
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM13 17H11V15H13V17ZM13 13H11V7H13V13Z" fill="currentColor"/>
         </svg>
-        How It Works
+        <span data-i18n="cardHowTitle">How It Works</span>
       </div>
-      <p>Q-Fill <b>instantly retrieves verification codes</b> from your inbox and automatically fills them into web forms with a single click.</p>
-      <p>When a code is detected, it will be automatically filled into any visible form.</p>
-      <p>The extension only reads emails for verification codes and does not store or transmit your data elsewhere.</p>
+      <p data-i18n="howItWorks1">Q-Fill retrieves verification codes from your inbox and fills web forms with one click.</p>
+      <p data-i18n="howItWorks2">Open the site that asks for a code, then run Check Emails from this popup.</p>
+      <p data-i18n="howItWorks3">Only verification codes are read locally. Nothing is sent to external servers.</p>
     </div>
     
     <div class="footer">
-      <p>Q-Fill for Gmail v1.1.0</p>
+      <p data-i18n-version="footerVersion">Q-Fill for Gmail</p>
     </div>
   </div>
   
-    <script src="popup.js"></script>
+    <script type="module" src="popup.js"></script>
   </body>
 </html>

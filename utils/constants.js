@@ -11,17 +11,8 @@
  * Time-related constants (in milliseconds unless otherwise specified)
  */
 export const TIME = {
-  /** Delay before retrying message send after script injection */
   INJECTION_RETRY_DELAY_MS: 300,
-  
-  /** Time window for fetching recent emails (5 minutes) */
-  EMAIL_FETCH_WINDOW_MINUTES: 5,
-  
-  /** Initial check time offset (2 minutes in ms) */
-  INITIAL_CHECK_OFFSET_MS: 2 * 60 * 1000,
-  
-  /** Time to consider an email as "fresh" (10 minutes) */
-  EMAIL_FRESHNESS_MINUTES: 10
+  INITIAL_CHECK_OFFSET_MS: 2 * 60 * 1000
 };
 
 /**
@@ -98,42 +89,16 @@ export const WEAK_VERIFICATION_KEYWORDS = Object.freeze([
 ]);
 
 /**
- * All verification keywords (combined)
- */
-export const VERIFICATION_KEYWORDS = Object.freeze([
-  ...STRONG_VERIFICATION_KEYWORDS,
-  ...WEAK_VERIFICATION_KEYWORDS
-]);
-
-/**
- * Keywords for scoring verification input fields
- */
-export const INPUT_VERIFICATION_KEYWORDS = Object.freeze([
-  'code',
-  'verification',
-  'verify',
-  'otp',
-  'token',
-  'auth',
-  'secure',
-  'pin',
-  'confirm',
-  'passcode',
-  'tfa',
-  '2fa',
-  'mfa',
-  'one-time',
-  'onetime'
-]);
-
-/**
- * Restricted URL patterns where content scripts cannot run
+ * Restricted URL patterns where content scripts cannot run (Chrome + Edge)
  */
 export const RESTRICTED_URLS = Object.freeze([
   'chrome://',
   'chrome-extension://',
   'chrome.google.com/webstore',
-  'chrome.google.com/extensions'
+  'chrome.google.com/extensions',
+  'edge://',
+  'extension://',
+  'microsoftedge.microsoft.com/extensions'
 ]);
 
 /**
@@ -144,38 +109,6 @@ export const INJECTION_ERROR_PATTERNS = Object.freeze([
   'Could not establish connection',
   'port closed',
   'disconnected'
-]);
-
-/**
- * Input types to skip when looking for verification code fields
- */
-export const SKIP_INPUT_TYPES = Object.freeze([
-  'checkbox',
-  'radio',
-  'submit',
-  'button',
-  'file',
-  'hidden',
-  'image',
-  'reset',
-  'color',
-  'date',
-  'datetime-local',
-  'month',
-  'week',
-  'time',
-  'range'
-]);
-
-/**
- * Valid text-like input types for code filling
- */
-export const TEXT_INPUT_TYPES = Object.freeze([
-  'text',
-  '',
-  'tel',
-  'number',
-  'password'
 ]);
 
 /**
@@ -205,11 +138,3 @@ export const CHECKING_STATUS = Object.freeze({
   ERROR: 'error'
 });
 
-/**
- * Debug levels for logging
- */
-export const DEBUG_LEVEL = {
-  NONE: 0,
-  BASIC: 1,
-  VERBOSE: 2
-};

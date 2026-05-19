@@ -1,25 +1,23 @@
-// popup.js
-
 /**
- * Auto Code Filler Popup
- * Handles user interactions in the extension popup
+ * Extension popup — auth UI and check-email flow.
+ * @module popup
  */
 
-document.addEventListener('DOMContentLoaded', async () => {
-  // UI Elements
+import { MESSAGE_ACTIONS } from './utils/constants.js';
+import { t, tVersion } from './utils/i18n.js';
+
+const CHECK_EMAILS_SVG =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-right:8px;vertical-align:text-bottom"><path d="M20 4H4C2.9 4 2 4.9 2 6V18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4ZM20 8L12 13L4 8V6L12 11L20 6V8Z" fill="white"/></svg>';
+
+document.addEventListener('DOMContentLoaded', () => {
   const elements = {
-    // Status indicators
     statusIndicator: document.getElementById('statusIndicator'),
     connectionStatus: document.getElementById('connectionStatus'),
     errorMessage: document.getElementById('errorMessage'),
     successMessage: document.getElementById('successMessage'),
-    
-    // Buttons
     connectButton: document.getElementById('connectButton'),
     disconnectButton: document.getElementById('disconnectButton'),
     checkEmailsButton: document.getElementById('checkEmailsButton'),
-    
-    // Visualization elements
     visualizationContainer: document.getElementById('visualizationContainer'),
     scanEffect: document.getElementById('scanEffect'),
     codeParticle: document.getElementById('codeParticle'),
@@ -27,64 +25,50 @@ document.addEventListener('DOMContentLoaded', async () => {
     loadingBar: document.getElementById('loadingBar'),
     statusText: document.getElementById('statusText')
   };
-  
-  // Prevents overlapping checks and animation races
+
   let checkInProgress = false;
   let pendingResultTimeout = null;
 
-  // Initialize the popup
-  initialize();
-  
-  /**
-   * Initialize the popup UI and event listeners
-   */
-  async function initialize() {
-    // Setup button event listeners
-    setupEventListeners();
-    
-    // Setup message listener for background script updates
-    setupMessageListener();
-    
-    // Check authentication status
-    await checkAuthStatus();
-  }
-  
-  /**
-   * Setup event listeners for buttons
-   */
-  function setupEventListeners() {
-    // Connect button
-    elements.connectButton.addEventListener('click', handleConnect);
-    
-    // Disconnect button
-    elements.disconnectButton.addEventListener('click', handleDisconnect);
-    
-    // Check emails button
-    if (elements.checkEmailsButton) {
-      elements.checkEmailsButton.addEventListener('click', handleCheckEmails);
+  applyLocalizedStrings();
+  bindEvents();
+  listenForBackground();
+  refreshAuthStatus();
+
+  function applyLocalizedStrings() {
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const key = el.getAttribute('data-i18n');
+      if (key) el.textContent = t(key);
+    });
+
+    const footer = document.querySelector('[data-i18n-version]');
+    if (footer) {
+      footer.textContent = tVersion('footerVersion', chrome.runtime.getManifest().version);
     }
+
+    elements.connectButton.textContent = t('connectGmail');
+    elements.disconnectButton.textContent = t('disconnect');
+    resetCheckButtonLabel();
   }
-  
-  /**
-   * Setup listener for messages from background script
-   */
-  function setupMessageListener() {
-    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-      console.log('Popup received message:', message);
-      
-      if (message.action === 'checkingStatus') {
-        handleCheckingStatusUpdate(message);
+
+  function resetCheckButtonLabel() {
+    elements.checkEmailsButton.innerHTML = `${CHECK_EMAILS_SVG}${t('checkEmails')}`;
+  }
+
+  function bindEvents() {
+    elements.connectButton.addEventListener('click', onConnect);
+    elements.disconnectButton.addEventListener('click', onDisconnect);
+    elements.checkEmailsButton.addEventListener('click', onCheckEmails);
+  }
+
+  function listenForBackground() {
+    chrome.runtime.onMessage.addListener(message => {
+      if (message.action === MESSAGE_ACTIONS.CHECKING_STATUS) {
+        onCheckingStatus(message);
       }
-      
-      // Return false as we're not using sendResponse
-      return false;
     });
   }
-  
-  /**
-   * Handle status updates from the background script (single source of truth)
-   */
-  function handleCheckingStatusUpdate(message) {
+
+  function onCheckingStatus(message) {
     if (!checkInProgress) return;
 
     if (pendingResultTimeout) {
@@ -94,471 +78,267 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     switch (message.status) {
       case 'checking':
-        elements.statusText.textContent = 'Searching for verification codes...';
+        elements.statusText.textContent = t('vizSearching');
         animateLoadingBar(65);
         break;
-
       case 'noEmails':
-        finishCheckWithError(
-          'No emails found',
-          'No emails found in your inbox'
-        );
+        finishWithError(t('vizNoEmails'), t('noEmailsUser'));
         break;
-
       case 'codeFound':
-        finishCheckWithSuccess(message.code, true);
+        finishWithSuccess(message.code);
         break;
-
       case 'fillFailed':
-        finishCheckWithPartialSuccess(
-          message.code,
-          message.error || 'Code found but could not fill the form on this page'
-        );
+        finishWithPartial(message.code, message.error || t('fillFailedDefault'));
         break;
-
       case 'noCodeFound':
-        finishCheckWithError(
-          'No verification code found',
-          'No verification code found in your recent emails'
-        );
+        finishWithError(t('vizNoCode'), t('noCodeUser'));
         break;
-
       case 'error':
-        finishCheckWithError(
-          'Error checking emails',
-          message.error || 'Failed to check emails'
-        );
+        finishWithError(t('vizError'), message.error || t('errorCheckFailed'));
         break;
     }
   }
 
   function finishCheck() {
     checkInProgress = false;
-    resetButtonAfterDelay();
+    setTimeout(() => {
+      elements.checkEmailsButton.disabled = false;
+      resetCheckButtonLabel();
+    }, 2000);
   }
 
-  function finishCheckWithSuccess(code, filled) {
-    elements.statusText.textContent = 'Code applied!';
+  function finishWithSuccess(code) {
+    elements.statusText.textContent = t('vizCodeApplied');
     animateLoadingBar(100);
     runSuccessVisualization(code);
-    showSuccess(
-      filled
-        ? 'Verification code applied to the page behind this popup.'
-        : 'Verification code found.'
-    );
+    showBanner('success', t('codeAppliedUser'));
     finishCheck();
   }
 
-  function finishCheckWithPartialSuccess(code, errorMessage) {
-    elements.statusText.textContent = 'Code found';
+  function finishWithPartial(code, errorMessage) {
+    elements.statusText.textContent = t('vizCodeFound');
     animateLoadingBar(100, true);
-    if (code) {
-      elements.codeParticle.textContent = code;
-    }
+    if (code) elements.codeParticle.textContent = code;
     showErrorVisualization();
-    showError(errorMessage);
+    showBanner('error', errorMessage);
     finishCheck();
   }
 
-  function finishCheckWithError(statusText, userMessage) {
+  function finishWithError(statusText, userMessage) {
     elements.statusText.textContent = statusText;
     animateLoadingBar(100, true);
     showErrorVisualization();
-    showError(userMessage);
+    showBanner('error', userMessage);
     finishCheck();
   }
 
-  /**
-   * Success animation driven by the real result (not a timer guess)
-   */
   function runSuccessVisualization(code) {
-    const displayCode = code || '------';
-    elements.codeParticle.textContent = displayCode;
+    const display = code || '------';
+    elements.codeParticle.textContent = display;
     elements.codeParticle.classList.remove('error');
     elements.codeParticle.style.opacity = '1';
     elements.codeParticle.style.animation = 'codeExtractAnimation 1.6s ease-in-out forwards';
 
     setTimeout(() => {
-      elements.formInput.textContent = displayCode;
+      elements.formInput.textContent = display;
       elements.formInput.classList.add('filled');
       elements.formInput.classList.remove('error');
       elements.formInput.style.animation = 'formPulseAnimation 0.5s ease-in-out';
     }, 1200);
   }
-  
-  /**
-   * Show error visualization (shake animation, red highlights)
-   */
+
   function showErrorVisualization() {
-    // Get references to visual elements
     const emailContainer = document.querySelector('.email-container');
-    const scanEffect = document.getElementById('scanEffect');
-    const codeParticle = document.getElementById('codeParticle');
     const noCodeIcon = document.getElementById('noCodeIcon');
-    const formInput = document.getElementById('formInput');
-    
-    // Stop normal animations and setup error state
-    codeParticle.style.animation = 'none';
-    void codeParticle.offsetWidth; // Force reflow
-    
-    // Add error styling to elements
-    emailContainer.classList.add('error');
-    scanEffect.classList.add('error');
-    codeParticle.classList.add('error');
+    const formInput = elements.formInput;
+
+    elements.codeParticle.style.animation = 'none';
+    void elements.codeParticle.offsetWidth;
+
+    emailContainer?.classList.add('error');
+    elements.scanEffect.classList.add('error');
+    elements.codeParticle.classList.add('error');
     formInput.classList.add('error');
-    
-    // Set text for error state
-    codeParticle.textContent = 'No Code';
-    
-    // Run the error animation sequence
+    elements.codeParticle.textContent = t('noCodeLabel');
+
     setTimeout(() => {
-      // First animate the email container shaking
-      emailContainer.style.animation = 'emailErrorShake 0.6s cubic-bezier(0.36, 0.07, 0.19, 0.97) both';
-      
-      // Re-run scan effect with error styling
-      scanEffect.style.animation = 'scanAnimation 2s ease-in-out';
-      
-      // Then, start the code particle animation with error styling
+      if (emailContainer) {
+        emailContainer.style.animation = 'emailErrorShake 0.6s cubic-bezier(0.36, 0.07, 0.19, 0.97) both';
+      }
+      elements.scanEffect.style.animation = 'scanAnimation 2s ease-in-out';
+
       setTimeout(() => {
-        codeParticle.style.animation = 'codeNotFoundAnimation 2s ease-in-out forwards';
-        
-        // When particle animation is near completion, show the X icon
+        elements.codeParticle.style.animation = 'codeNotFoundAnimation 2s ease-in-out forwards';
         setTimeout(() => {
-          // Hide code particle
-          codeParticle.style.opacity = '0';
-          
-          // Show no code icon
-          noCodeIcon.classList.add('visible');
-          
-          // Shake the form input
+          elements.codeParticle.style.opacity = '0';
+          noCodeIcon?.classList.add('visible');
           formInput.style.animation = 'formShakeAnimation 0.5s ease-in-out';
-          formInput.style.borderColor = 'var(--error-color)';
-          formInput.style.color = 'var(--error-color)';
-          
-          // Add flash animation to the form container
-          document.querySelector('.form-container').style.animation = 'errorFlash 0.8s ease-in-out';
         }, 1600);
       }, 600);
     }, 300);
-    
-    // Cleanup animations after they complete
-    setTimeout(() => {
-      emailContainer.style.animation = 'none';
-      formInput.style.animation = 'none';
-      document.querySelector('.form-container').style.animation = 'none';
-      
-      // Keep the error styling for a bit
-      setTimeout(() => {
-        // Clean up, but keep the no code icon
-        emailContainer.classList.remove('error');
-        scanEffect.classList.remove('error');
-        scanEffect.style.animation = 'none';
-      }, 1000);
-    }, 2500);
-  }
-  
-  /**
-   * Reset button after operation completes
-   */
-  function resetButtonAfterDelay() {
-    // Add a brief timeout before re-enabling the button
-    setTimeout(() => {
-      elements.checkEmailsButton.disabled = false;
-      elements.checkEmailsButton.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-right: 8px; vertical-align: text-bottom;"><path d="M20 4H4C2.9 4 2 4.9 2 6V18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4ZM20 8L12 13L4 8V6L12 11L20 6V8Z" fill="white"/></svg> Check Emails Now';
-    }, 2000);
-  }
-  
-  /**
-   * Capture the tab the user was on when they opened the popup
-   */
-  function getTargetTabId() {
-    return new Promise((resolve) => {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        resolve(tabs?.[0]?.id ?? null);
-      });
-    });
   }
 
-  /**
-   * Force check emails — visualization follows the real background result
-   */
-  async function handleCheckEmails() {
+  async function onCheckEmails() {
     if (checkInProgress) return;
 
     try {
       checkInProgress = true;
       elements.checkEmailsButton.disabled = true;
-      elements.checkEmailsButton.innerHTML = 'Checking... <span class="checking-animation pulse">⟳</span>';
+      elements.checkEmailsButton.innerHTML =
+        `${t('checking')} <span class="checking-animation pulse">⟳</span>`;
 
-      hideMessages();
+      hideBanners();
       elements.visualizationContainer.style.display = 'block';
       resetVisualization();
 
       const targetTabId = await getTargetTabId();
-
-      elements.statusText.textContent = 'Connecting to Gmail...';
+      elements.statusText.textContent = t('vizConnecting');
       animateLoadingBar(25);
       startScanAnimation();
 
       await sendMessage({
-        action: 'forceCheckEmails',
+        action: MESSAGE_ACTIONS.FORCE_CHECK_EMAILS,
         tabId: targetTabId
       });
 
-      elements.statusText.textContent = 'Searching for verification codes...';
+      elements.statusText.textContent = t('vizSearching');
       animateLoadingBar(45);
 
-      // Safety net if background never responds
       pendingResultTimeout = setTimeout(() => {
-        if (!checkInProgress) return;
-        finishCheckWithError(
-          'Request timed out',
-          'Checking took too long. Try again.'
-        );
+        if (checkInProgress) {
+          finishWithError(t('vizError'), t('errorTimeout'));
+        }
       }, 30000);
-    } catch (error) {
-      finishCheckWithError(
-        'Error checking emails',
-        'Failed to check emails'
-      );
-      console.error('Check emails error:', error);
+    } catch {
+      finishWithError(t('vizError'), t('errorCheckFailed'));
     }
   }
-  
-  /**
-   * Reset the visualization elements to their default state
-   */
+
   function resetVisualization() {
     elements.scanEffect.style.animation = 'none';
     elements.codeParticle.style.animation = 'none';
-    elements.formInput.classList.remove('filled');
-    elements.formInput.classList.remove('error');
-    elements.formInput.textContent = 'Verification Code';
+    elements.formInput.classList.remove('filled', 'error');
+    elements.formInput.textContent = t('formPlaceholder');
     elements.formInput.style.borderColor = '';
     elements.formInput.style.color = '';
     elements.loadingBar.style.width = '0%';
     elements.loadingBar.style.backgroundColor = 'var(--success-color)';
-    elements.statusText.textContent = 'Ready to check';
-    
-    // Reset error elements
-    const emailContainer = document.querySelector('.email-container');
-    const scanEffect = document.getElementById('scanEffect');
-    const codeParticle = document.getElementById('codeParticle');
-    const noCodeIcon = document.getElementById('noCodeIcon');
-    
-    if (emailContainer) emailContainer.classList.remove('error');
-    if (scanEffect) scanEffect.classList.remove('error');
-    if (codeParticle) {
-      codeParticle.classList.remove('error');
-      codeParticle.textContent = '123456';
-    }
-    if (noCodeIcon) noCodeIcon.classList.remove('visible');
-    
-    document.querySelector('.form-container').style.animation = 'none';
-    
-    // Force reflow
-    void elements.scanEffect.offsetWidth;
-    void elements.codeParticle.offsetWidth;
+    elements.statusText.textContent = t('vizReady');
+
+    document.querySelector('.email-container')?.classList.remove('error');
+    elements.scanEffect.classList.remove('error');
+    elements.codeParticle.classList.remove('error');
+    elements.codeParticle.textContent = '123456';
+    document.getElementById('noCodeIcon')?.classList.remove('visible');
   }
-  
-  /**
-   * Animate the scan effect
-   */
+
   function startScanAnimation() {
     elements.scanEffect.style.animation = 'scanAnimation 2s ease-in-out';
   }
-  
-  /**
-   * Animate the loading bar
-   */
-  function animateLoadingBar(percentage, isError = false) {
-    elements.loadingBar.style.width = `${percentage}%`;
-    
-    if (isError) {
-      elements.loadingBar.style.backgroundColor = 'var(--error-color)';
-    }
+
+  function animateLoadingBar(percent, isError = false) {
+    elements.loadingBar.style.width = `${percent}%`;
+    if (isError) elements.loadingBar.style.backgroundColor = 'var(--error-color)';
   }
-  
-  /**
-   * Check if the extension is authenticated with Gmail
-   */
-  async function checkAuthStatus() {
+
+  async function refreshAuthStatus() {
     try {
-      const response = await sendMessage({ action: 'getAuthStatus' });
-      updateAuthUI(response.isAuthenticated);
-    } catch (error) {
-      showError('Failed to check authentication status');
-      console.error('Auth status check error:', error);
+      const { isAuthenticated } = await sendMessage({ action: MESSAGE_ACTIONS.GET_AUTH_STATUS });
+      setAuthUI(!!isAuthenticated);
+    } catch {
+      showBanner('error', t('errorAuthStatus'));
     }
   }
-  
-  /**
-   * Update UI based on authentication status
-   */
-  function updateAuthUI(isAuthenticated) {
+
+  function setAuthUI(isAuthenticated) {
     if (isAuthenticated) {
-      elements.statusIndicator.textContent = 'Connected';
+      elements.statusIndicator.textContent = t('statusConnected');
       elements.statusIndicator.classList.add('connected');
-      elements.connectionStatus.textContent = 'Connected to Gmail. Press the button below to check for verification codes.';
+      elements.connectionStatus.textContent = t('connectionStatusConnected');
       elements.connectButton.classList.add('hidden');
       elements.disconnectButton.classList.remove('hidden');
-      
-      // Show check emails button when connected
-      if (elements.checkEmailsButton) {
-        elements.checkEmailsButton.classList.remove('hidden');
-      }
+      elements.checkEmailsButton.classList.remove('hidden');
     } else {
-      elements.statusIndicator.textContent = 'Disconnected';
+      elements.statusIndicator.textContent = t('statusDisconnected');
       elements.statusIndicator.classList.remove('connected');
-      elements.connectionStatus.textContent = 'Connect to Gmail to manually extract and fill verification codes.';
+      elements.connectionStatus.textContent = t('connectionStatusDisconnected');
       elements.connectButton.classList.remove('hidden');
       elements.disconnectButton.classList.add('hidden');
-      
-      // Hide check emails button when disconnected
-      if (elements.checkEmailsButton) {
-        elements.checkEmailsButton.classList.add('hidden');
-      }
-      
-      // Hide visualization container if shown
+      elements.checkEmailsButton.classList.add('hidden');
       elements.visualizationContainer.style.display = 'none';
     }
   }
-  
-  /**
-   * Handle connect button click
-   */
-  async function handleConnect() {
-    hideMessages();
+
+  async function onConnect() {
+    hideBanners();
     elements.connectButton.disabled = true;
-    elements.connectButton.innerHTML = 'Connecting... <span class="checking-animation pulse">⟳</span>';
-    
+    elements.connectButton.innerHTML =
+      `${t('connecting')} <span class="checking-animation pulse">⟳</span>`;
+
     try {
-      const response = await sendMessage({ action: 'authenticate' });
-      
-      if (response.success) {
-        updateAuthUI(true);
-        showSuccess('Successfully connected to Gmail');
+      const response = await sendMessage({ action: MESSAGE_ACTIONS.AUTHENTICATE });
+      if (response?.success) {
+        setAuthUI(true);
+        showBanner('success', t('successConnected'));
       } else {
-        showError(response.error || 'Failed to authenticate');
+        showBanner('error', response?.error || t('errorAuthFailed'));
       }
-    } catch (error) {
-      showError('Connection failed');
-      console.error('Auth error:', error);
+    } catch {
+      showBanner('error', t('errorConnectionFailed'));
     } finally {
       elements.connectButton.disabled = false;
-      elements.connectButton.textContent = 'Connect to Gmail';
+      elements.connectButton.textContent = t('connectGmail');
     }
   }
-  
-  /**
-   * Handle disconnect button click
-   */
-  async function handleDisconnect() {
-    hideMessages();
+
+  async function onDisconnect() {
+    hideBanners();
     elements.disconnectButton.disabled = true;
-    elements.disconnectButton.innerHTML = 'Disconnecting... <span class="checking-animation pulse">⟳</span>';
-    
+    elements.disconnectButton.innerHTML =
+      `${t('disconnecting')} <span class="checking-animation pulse">⟳</span>`;
+
     try {
-      // First try the clearAuth action (original action name)
-      let response = await sendMessage({ action: 'clearAuth' });
-      
-      // If no success property in response, try alternative action name
-      if (response === undefined || response.success === undefined) {
-        response = await sendMessage({ action: 'logout' });
-      }
-      
-      // If still no success, try one more action name that might be used
-      if (response === undefined || response.success === undefined) {
-        response = await sendMessage({ action: 'disconnect' });
-      }
-      
-      // Force disconnect UI update regardless of response
-      updateAuthUI(false);
-      showSuccess('Successfully disconnected from Gmail');
-      
-      // Force a refresh of the auth status after a brief delay
-      setTimeout(async () => {
-        await checkAuthStatus();
-      }, 500);
-    } catch (error) {
-      console.error('Disconnect error:', error);
-      
-      // Even if there's an error, attempt to update UI to disconnected state
-      updateAuthUI(false);
-      showSuccess('Disconnected from Gmail');
+      await sendMessage({ action: MESSAGE_ACTIONS.CLEAR_AUTH });
+      setAuthUI(false);
+      showBanner('success', t('successDisconnected'));
+    } catch {
+      setAuthUI(false);
+      showBanner('success', t('successDisconnected'));
     } finally {
       elements.disconnectButton.disabled = false;
-      elements.disconnectButton.textContent = 'Disconnect';
+      elements.disconnectButton.textContent = t('disconnect');
     }
   }
-  
-  /**
-   * Show error message
-   */
-  function showError(message) {
-    const errorSpan = elements.errorMessage.querySelector('span');
-    if (errorSpan) {
-      errorSpan.textContent = message;
-    } else {
-      elements.errorMessage.textContent = message;
-    }
-    
-    elements.errorMessage.classList.remove('hidden');
-    elements.successMessage.classList.add('hidden');
-    
-    // Hide after 5 seconds
-    setTimeout(() => {
-      elements.errorMessage.classList.add('hidden');
-    }, 5000);
+
+  function showBanner(kind, text) {
+    const box = kind === 'success' ? elements.successMessage : elements.errorMessage;
+    const other = kind === 'success' ? elements.errorMessage : elements.successMessage;
+    const span = box.querySelector('span');
+    (span || box).textContent = text;
+    box.classList.remove('hidden');
+    other.classList.add('hidden');
+    setTimeout(() => box.classList.add('hidden'), 5000);
   }
-  
-  /**
-   * Hide all messages
-   */
-  function hideMessages() {
+
+  function hideBanners() {
     elements.errorMessage.classList.add('hidden');
     elements.successMessage.classList.add('hidden');
   }
-  
-  /**
-   * Show success message
-   */
-  function showSuccess(message) {
-    const successSpan = elements.successMessage.querySelector('span');
-    if (successSpan) {
-      successSpan.textContent = message;
-    } else {
-      elements.successMessage.textContent = message;
-    }
-    
-    elements.successMessage.classList.remove('hidden');
-    elements.errorMessage.classList.add('hidden');
-    
-    // Hide after 5 seconds
-    setTimeout(() => {
-      elements.successMessage.classList.add('hidden');
-    }, 5000);
+
+  function getTargetTabId() {
+    return new Promise(resolve => {
+      chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+        resolve(tabs?.[0]?.id ?? null);
+      });
+    });
   }
-  
-  /**
-   * Send message to background script
-   */
+
   function sendMessage(message) {
     return new Promise((resolve, reject) => {
-      try {
-        chrome.runtime.sendMessage(message, (response) => {
-          if (chrome.runtime.lastError) {
-            console.error('Runtime error:', chrome.runtime.lastError);
-            reject(chrome.runtime.lastError);
-          } else {
-            resolve(response);
-          }
-        });
-      } catch (error) {
-        console.error('Send message error:', error);
-        reject(error);
-        }
+      chrome.runtime.sendMessage(message, response => {
+        if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
+        else resolve(response);
       });
-    }
-  });
-  
+    });
+  }
+});
