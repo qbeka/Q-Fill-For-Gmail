@@ -1,8 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "Q-Fill for Gmail",
-  "version": "1.1.0",
-  "description": "Automatically extracts verification codes from Gmail and fills them into web forms. Privacy-focused: all processing happens locally.",
+  "name": "__MSG_extensionName__",
+  "short_name": "Q-Fill",
+  "description": "__MSG_extensionDescription__",
+  "version": "1.2.0",
+  "default_locale": "en",
 
   "permissions": [
     "identity",
@@ -21,7 +23,7 @@
   ],
 
   "oauth2": {
-    "client_id": "YOUR_OAUTH_CLIENT_ID_HERE",
+    "client_id": "YOUR_OAUTH_CLIENT_ID_HERE.apps.googleusercontent.com",
     "scopes": [
       "https://www.googleapis.com/auth/gmail.readonly"
     ]
@@ -34,18 +36,19 @@
 
   "action": {
     "default_popup": "popup.html",
+    "default_title": "__MSG_actionTitle__",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
-    },
-    "default_title": "Q-Fill for Gmail"
+    }
   },
 
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "js": ["content/index.js"],
+      "type": "module",
       "run_at": "document_idle"
     }
   ],
@@ -56,9 +59,25 @@
     "128": "icons/icon128.png"
   },
 
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "content/*.js",
+        "utils/*.js"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ],
+
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
   },
 
-  "minimum_chrome_version": "88"
+  "minimum_chrome_version": "88",
+
+  "browser_specific_settings": {
+    "edge": {
+      "browser_action_next_to_addressbar": true
+    }
+  }
 }

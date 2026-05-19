@@ -47,7 +47,7 @@ Q-Fill connects to your Gmail account with read-only access, scans recent emails
 
 ## Prerequisites
 
-- Google Chrome version 88 or later
+- Google Chrome 88+ or Microsoft Edge 88+ (Chromium)
 - A Google account with Gmail
 - A Google Cloud project (free tier is sufficient)
 
@@ -116,6 +116,8 @@ Create the configuration files:
 cp config/config.template.js config/config.js
 cp manifest_template.json manifest.json
 ```
+
+See [docs/MANIFEST.md](docs/MANIFEST.md) for what each permission does. For **Edge**, load the unpacked extension at `edge://extensions`, copy its ID, and add a second OAuth client in Google Cloud (Chrome extension type) with that ID.
 
 Edit `config/config.js` and replace the placeholder:
 
@@ -200,7 +202,9 @@ const CONFIG = {
 ```
 qfill-extension/
 ├── background.js              # Service worker: Gmail API, message handling
-├── content.js                 # Content script: DOM scanning, form filling
+├── content/                   # Content script modules (fill engine, DOM, UI)
+├── _locales/                  # UI translations (20+ languages)
+├── docs/MANIFEST.md           # Permission reference for manifest_template.json
 ├── popup.html                 # Extension popup markup
 ├── popup.js                   # Popup logic: auth state, user actions
 ├── manifest.json              # Chrome extension manifest (git-ignored)
@@ -235,7 +239,7 @@ qfill-extension/
                                │
                                v
                         ┌──────────────────┐
-                        │   content.js     │
+                        │   content/       │
                         │   (DOM filling)  │
                         └──────────────────┘
 ```

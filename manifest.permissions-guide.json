@@ -1,0 +1,24 @@
+{
+  "_readme": "Reference only — not loaded by the browser. Copy manifest_template.json to manifest.json.",
+  "permissions": {
+    "identity": "Google OAuth sign-in (Gmail read-only) via chrome.identity.",
+    "storage": "Persist connected/disconnected state locally.",
+    "activeTab": "Interact with the tab you are filling when you click Check Emails.",
+    "scripting": "Inject the content script on the form tab if it is not already loaded.",
+    "tabs": "Resolve which tab to fill when the popup opens.",
+    "notifications": "Optional alerts when no verification email or code is found."
+  },
+  "host_permissions": {
+    "https://www.googleapis.com/*": "Google APIs (Gmail).",
+    "https://gmail.googleapis.com/*": "Fetch message list and bodies.",
+    "https://accounts.google.com/*": "Revoke OAuth token on disconnect.",
+    "*://*/*": "Run content script on sites where you enter verification codes."
+  },
+  "oauth2": {
+    "scopes": "gmail.readonly — read messages only; cannot send or delete mail."
+  },
+  "browser_support": {
+    "chrome": "88+ (Manifest V3)",
+    "edge": "88+ — same package; use Edge extension ID for a second OAuth client if needed."
+  }
+}

@@ -1,0 +1,163 @@
+{
+  "extensionName": {
+    "message": "Q-Fill für Gmail",
+    "description": "Extension name shown in the browser toolbar and store"
+  },
+  "extensionDescription": {
+    "message": "Liest Bestätigungscodes aus Gmail und füllt Webformulare aus. Alles lokal auf Ihrem Gerät.",
+    "description": "Short description for extension stores"
+  },
+  "actionTitle": {
+    "message": "Q-Fill for Gmail"
+  },
+  "statusConnected": {
+    "message": "Verbunden"
+  },
+  "statusDisconnected": {
+    "message": "Getrennt"
+  },
+  "connectionStatusConnected": {
+    "message": "Connected to Gmail. Open the page with your verification form, then press the button below."
+  },
+  "connectionStatusDisconnected": {
+    "message": "Connect to Gmail to extract verification codes and fill them into forms."
+  },
+  "connectGmail": {
+    "message": "Mit Gmail verbinden"
+  },
+  "disconnect": {
+    "message": "Trennen"
+  },
+  "checkEmails": {
+    "message": "E-Mails prüfen"
+  },
+  "connecting": {
+    "message": "Connecting..."
+  },
+  "disconnecting": {
+    "message": "Disconnecting..."
+  },
+  "checking": {
+    "message": "Checking..."
+  },
+  "cardGmailTitle": {
+    "message": "Gmail Connection"
+  },
+  "cardHowTitle": {
+    "message": "How It Works"
+  },
+  "howItWorks1": {
+    "message": "Q-Fill instantly retrieves verification codes from your inbox and fills them into web forms with one click."
+  },
+  "howItWorks2": {
+    "message": "Open the site that asks for a code, then run Check Emails from this popup."
+  },
+  "howItWorks3": {
+    "message": "Only verification codes are read locally. Nothing is sent to external servers."
+  },
+  "footerVersion": {
+    "message": "Q-Fill for Gmail v$VERSION$",
+    "placeholders": {
+      "version": {
+        "content": "$1",
+        "example": "1.2.0"
+      }
+    }
+  },
+  "vizReady": {
+    "message": "Ready to check"
+  },
+  "vizConnecting": {
+    "message": "Connecting to Gmail..."
+  },
+  "vizSearching": {
+    "message": "Searching for verification codes..."
+  },
+  "vizCodeApplied": {
+    "message": "Code applied!"
+  },
+  "vizCodeFound": {
+    "message": "Code found"
+  },
+  "vizNoEmails": {
+    "message": "No emails found"
+  },
+  "vizNoCode": {
+    "message": "No verification code found"
+  },
+  "vizError": {
+    "message": "Error checking emails"
+  },
+  "noEmailsUser": {
+    "message": "No emails found in your inbox"
+  },
+  "noCodeUser": {
+    "message": "No verification code found in your recent emails"
+  },
+  "codeAppliedUser": {
+    "message": "Verification code applied to the page behind this popup."
+  },
+  "fillFailedDefault": {
+    "message": "Code found but could not fill the form. Open the verification page and try again."
+  },
+  "errorAuthFailed": {
+    "message": "Failed to authenticate with Gmail"
+  },
+  "errorConnectionFailed": {
+    "message": "Connection failed"
+  },
+  "errorCheckFailed": {
+    "message": "Failed to check emails"
+  },
+  "errorNotConnected": {
+    "message": "Connect to Gmail before checking for codes."
+  },
+  "errorTimeout": {
+    "message": "Checking took too long. Please try again."
+  },
+  "errorAuthStatus": {
+    "message": "Failed to check authentication status"
+  },
+  "successConnected": {
+    "message": "Successfully connected to Gmail"
+  },
+  "successDisconnected": {
+    "message": "Successfully disconnected from Gmail"
+  },
+  "notificationNoEmailsTitle": {
+    "message": "No emails found"
+  },
+  "notificationNoEmails": {
+    "message": "No recent emails to check."
+  },
+  "notificationNoCodeTitle": {
+    "message": "No code found"
+  },
+  "notificationNoCode": {
+    "message": "No verification code in your recent emails."
+  },
+  "toastFillSuccess": {
+    "message": "Code filled"
+  },
+  "toastFillFailedPage": {
+    "message": "Could not fill verification code on this page"
+  },
+  "demoEmailSubject": {
+    "message": "Your verification code"
+  },
+  "demoEmailFrom": {
+    "message": "Security Team"
+  },
+  "demoEmailBody": {
+    "message": "Your code is:"
+  },
+  "formPlaceholder": {
+    "message": "Verification Code"
+  },
+  "submit": {
+    "message": "Submit"
+  },
+  "noCodeLabel": {
+    "message": "No Code"
+  }
+}
