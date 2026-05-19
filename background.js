@@ -7,7 +7,7 @@ import { GmailAPI } from './services/gmail-api.js';
 import { StorageManager } from './services/storage-manager.js';
 import { sendCodeToTabs, sendFillFailedToTab } from './utils/tab-messenger.js';
 import { toPlainText } from './services/gmail-message.js';
-import { extractVerificationCode } from './services/code-extractor.js';
+import { extractBestCode } from './services/code-extractor.js';
 import {
   MESSAGE_ACTIONS,
   CHECKING_STATUS
@@ -136,11 +136,20 @@ class BackgroundManager {
         return;
       }
 
-      let extractedCode = null;
+      let bestMatch = null;
+
       for (const { id } of messages) {
-        extractedCode = await this.extractFromMessage(id);
-        if (extractedCode) break;
+        const match = await this.extractFromMessage(id);
+        if (!match) continue;
+
+        if (!bestMatch || match.score > bestMatch.score) {
+          bestMatch = match;
+        }
+
+        if (match.score >= 95) break;
       }
+
+      const extractedCode = bestMatch?.code ?? null;
 
       if (!extractedCode) {
         this.notify('notificationNoCodeTitle', 'notificationNoCode');
@@ -183,8 +192,18 @@ class BackgroundManager {
       if (!message?.payload) return null;
 
       const { subject, from, text, body } = toPlainText(message);
-      console.log('[Q-Fill] From:', from, '| Subject:', subject);
-      return extractVerificationCode(text || body, subject);
+      const match = extractBestCode(text || body, subject);
+
+      if (match) {
+        console.log(
+          `[Q-Fill] ${from} | "${subject}" → ${match.code} ` +
+          `(score ${match.score}, ${match.source})`
+        );
+      } else {
+        console.log(`[Q-Fill] ${from} | "${subject}" → no code`);
+      }
+
+      return match;
     } catch (error) {
       console.error('[Q-Fill] process message:', error);
       return null;

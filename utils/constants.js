@@ -80,10 +80,10 @@ export const STRONG_VERIFICATION_KEYWORDS = Object.freeze([
 /**
  * Weak verification keywords - may indicate a code
  */
+/** Used only for Gmail search queries — not for loose in-body matching */
 export const WEAK_VERIFICATION_KEYWORDS = Object.freeze([
   'verification',
   'verify',
-  'code',
   'confirm',
   'secure',
   'security',
@@ -92,7 +92,8 @@ export const WEAK_VERIFICATION_KEYWORDS = Object.freeze([
   'sign in',
   'sign-in',
   'token',
-  'pin'
+  'pin',
+  'otp'
 ]);
 
 /**
