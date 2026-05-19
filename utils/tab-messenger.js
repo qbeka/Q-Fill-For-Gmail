@@ -1,17 +1,17 @@
 /**
  * Tab Messenger Module for Q-Fill for Gmail
- * 
- * Provides unified tab messaging functionality for the extension.
- * IMPORTANT: Only sends to the ACTIVE tab, not all tabs.
- * 
+ *
+ * Sends messages to a specific tab (the page the user was on when they
+ * clicked "Check Emails"), with injection fallback when needed.
+ *
  * @fileoverview Unified tab messaging utilities
  */
 
-import { 
-  RESTRICTED_URLS, 
-  INJECTION_ERROR_PATTERNS, 
-  TIME, 
-  MESSAGE_ACTIONS 
+import {
+  RESTRICTED_URLS,
+  INJECTION_ERROR_PATTERNS,
+  TIME,
+  MESSAGE_ACTIONS
 } from './constants.js';
 
 /**
@@ -38,7 +38,7 @@ function needsScriptInjection(errorMsg) {
  * Send a message to a specific tab with error handling
  * @param {number} tabId - The tab ID to send the message to
  * @param {Object} message - The message object to send
- * @returns {Promise<{success: boolean, needsInjection: boolean}>}
+ * @returns {Promise<{success: boolean, needsInjection: boolean, response?: Object}>}
  */
 async function sendMessageToTab(tabId, message) {
   return new Promise(resolve => {
@@ -47,20 +47,25 @@ async function sendMessageToTab(tabId, message) {
         if (chrome.runtime.lastError) {
           const errorMsg = chrome.runtime.lastError.message || '';
           console.log(`Error sending to tab ${tabId}: ${errorMsg}`);
-          
+
           resolve({
             success: false,
-            needsInjection: needsScriptInjection(errorMsg)
+            needsInjection: needsScriptInjection(errorMsg),
+            response: null
           });
-        } else if (response && response.success) {
-          resolve({ success: true, needsInjection: false });
+        } else if (response?.success) {
+          resolve({ success: true, needsInjection: false, response });
         } else {
-          resolve({ success: false, needsInjection: false });
+          resolve({
+            success: false,
+            needsInjection: false,
+            response: response || null
+          });
         }
       });
     } catch (error) {
       console.error(`Error in sendMessageToTab: ${error}`);
-      resolve({ success: false, needsInjection: false });
+      resolve({ success: false, needsInjection: false, response: null });
     }
   });
 }
@@ -76,8 +81,7 @@ async function injectContentScript(tabId) {
       target: { tabId },
       files: ['content.js']
     });
-    
-    // Wait for script to initialize
+
     await new Promise(r => setTimeout(r, TIME.INJECTION_RETRY_DELAY_MS));
     return true;
   } catch (error) {
@@ -87,128 +91,152 @@ async function injectContentScript(tabId) {
 }
 
 /**
- * Process a single tab - send message, inject if needed, retry
- * @param {chrome.tabs.Tab} tab - The tab object
- * @param {Object} message - The message to send
- * @param {string} successLog - Log message on success
- * @returns {Promise<{success: boolean, tabId: number}>}
+ * Resolve which tab to target
+ * @param {number|null|undefined} tabId - Explicit tab from popup click
+ * @returns {Promise<chrome.tabs.Tab|null>}
  */
-async function processTab(tab, message, successLog) {
-  // Skip restricted URLs
-  if (isRestrictedUrl(tab.url)) {
-    console.log(`Skipping restricted URL: ${tab.url}`);
-    return { success: false, tabId: tab.id };
-  }
-  
-  try {
-    // First attempt to send message
-    let result = await sendMessageToTab(tab.id, message);
-    
-    if (result.success) {
-      console.log(`${successLog} in tab: ${tab.id}`);
-      return { success: true, tabId: tab.id };
+async function resolveTargetTab(tabId) {
+  if (tabId) {
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      if (tab?.id) return tab;
+    } catch (error) {
+      console.log(`Tab ${tabId} unavailable, falling back to active tab`);
     }
-    
-    // If content script needs injection
-    if (result.needsInjection) {
-      console.log(`Content script not found in tab ${tab.id}, injecting...`);
-      
-      // Double-check URL is not restricted
-      if (isRestrictedUrl(tab.url)) {
-        console.log(`Tab ${tab.id} is a restricted page, skipping injection`);
-        return { success: false, tabId: tab.id };
-      }
-      
-      // Inject and retry
-      const injected = await injectContentScript(tab.id);
-      if (injected) {
-        result = await sendMessageToTab(tab.id, message);
-        if (result.success) {
-          console.log(`Successfully injected and ${successLog.toLowerCase()} in tab: ${tab.id}`);
-          return { success: true, tabId: tab.id };
-        }
-      }
-    }
-    
-    console.log(`Tab ${tab.id} failed to process message`);
-    return { success: false, tabId: tab.id };
-  } catch (error) {
-    console.error(`Error processing tab ${tab.id}:`, error);
-    return { success: false, tabId: tab.id };
   }
-}
 
-/**
- * Get the currently active tab
- * @returns {Promise<chrome.tabs.Tab|null>} The active tab or null
- */
-async function getActiveTab() {
   return new Promise((resolve) => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs && tabs.length > 0) {
+      if (tabs?.length > 0) {
         resolve(tabs[0]);
-      } else {
-        // Fallback: try to get any active tab
-        chrome.tabs.query({ active: true }, (allActiveTabs) => {
-          if (allActiveTabs && allActiveTabs.length > 0) {
-            resolve(allActiveTabs[0]);
-          } else {
-            resolve(null);
-          }
-        });
+        return;
       }
+
+      chrome.tabs.query({ active: true, lastFocusedWindow: true }, (fallbackTabs) => {
+        resolve(fallbackTabs?.[0] || null);
+      });
     });
   });
 }
 
 /**
- * Send a verification code to the ACTIVE tab only
- * @param {string} code - The verification code to send
- * @returns {Promise<{success: boolean, tabId: number|null}>}
+ * Process a single tab - send message, inject if needed, retry
+ * @param {chrome.tabs.Tab} tab - The tab object
+ * @param {Object} message - The message to send
+ * @param {string} successLog - Log message on success
+ * @returns {Promise<{success: boolean, tabId: number, response?: Object, message?: string}>}
  */
-export async function sendCodeToTabs(code) {
-  const activeTab = await getActiveTab();
-  
-  if (!activeTab) {
-    console.log('No active tab found');
-    return { success: false, tabId: null };
+async function processTab(tab, message, successLog) {
+  if (isRestrictedUrl(tab.url)) {
+    console.log(`Skipping restricted URL: ${tab.url}`);
+    return {
+      success: false,
+      tabId: tab.id,
+      message: 'Cannot fill codes on browser system pages. Open the site with your verification form first.'
+    };
   }
-  
-  console.log(`Sending code "${code}" to active tab: ${activeTab.id} (${activeTab.url})`);
-  
-  const message = { 
-    action: MESSAGE_ACTIONS.FILL_CODE, 
-    code 
-  };
-  
-  const result = await processTab(activeTab, message, 'Code successfully filled');
-  
-  if (result.success) {
-    console.log(`Code successfully sent to active tab ${activeTab.id}`);
-  } else {
-    console.log(`Failed to send code to active tab ${activeTab.id}`);
+
+  try {
+    let result = await sendMessageToTab(tab.id, message);
+
+    if (result.success) {
+      console.log(`${successLog} in tab: ${tab.id}`);
+      return { success: true, tabId: tab.id, response: result.response };
+    }
+
+    if (result.needsInjection) {
+      console.log(`Content script not found in tab ${tab.id}, injecting...`);
+
+      if (isRestrictedUrl(tab.url)) {
+        return {
+          success: false,
+          tabId: tab.id,
+          message: 'Cannot inject on this page type.'
+        };
+      }
+
+      const injected = await injectContentScript(tab.id);
+      if (injected) {
+        result = await sendMessageToTab(tab.id, message);
+        if (result.success) {
+          console.log(`Successfully injected and ${successLog.toLowerCase()} in tab: ${tab.id}`);
+          return { success: true, tabId: tab.id, response: result.response };
+        }
+      }
+    }
+
+    const fillMessage = result.response?.message;
+    console.log(`Tab ${tab.id} failed to process message`);
+    return {
+      success: false,
+      tabId: tab.id,
+      message: fillMessage || 'Could not reach the page. Refresh the form page and try again.'
+    };
+  } catch (error) {
+    console.error(`Error processing tab ${tab.id}:`, error);
+    return {
+      success: false,
+      tabId: tab.id,
+      message: error.message || 'Unexpected error filling the form'
+    };
   }
-  
-  return result;
 }
 
 /**
- * Send a "no code found" notification to the ACTIVE tab only
+ * Send a verification code to the target tab
+ * @param {string} code - The verification code to send
+ * @param {number|null|undefined} tabId - Tab captured when user started the check
+ * @returns {Promise<{success: boolean, tabId: number|null, message?: string}>}
+ */
+export async function sendCodeToTabs(code, tabId = null) {
+  const targetTab = await resolveTargetTab(tabId);
+
+  if (!targetTab) {
+    console.log('No target tab found');
+    return {
+      success: false,
+      tabId: null,
+      message: 'No browser tab found. Open the page with your verification form first.'
+    };
+  }
+
+  console.log(`Sending code to tab ${targetTab.id} (${targetTab.url})`);
+
+  const message = {
+    action: MESSAGE_ACTIONS.FILL_CODE,
+    code
+  };
+
+  const result = await processTab(targetTab, message, 'Code successfully filled');
+
+  if (!result.success) {
+    console.log(`Failed to send code to tab ${targetTab.id}`);
+  }
+
+  return {
+    success: result.success,
+    tabId: result.tabId,
+    message: result.message || result.response?.message
+  };
+}
+
+/**
+ * Notify the target tab that filling failed (form not found on page)
+ * @param {number|null|undefined} tabId
+ * @param {string} message
  * @returns {Promise<{success: boolean, tabId: number|null}>}
  */
-export async function sendNoCodeFoundToTabs() {
-  const activeTab = await getActiveTab();
-  
-  if (!activeTab) {
-    console.log('No active tab found for no-code notification');
-    return { success: false, tabId: null };
+export async function sendFillFailedToTab(tabId, message) {
+  const targetTab = await resolveTargetTab(tabId);
+
+  if (!targetTab || isRestrictedUrl(targetTab.url)) {
+    return { success: false, tabId: targetTab?.id || null };
   }
-  
-  console.log(`Sending no-code-found notification to active tab: ${activeTab.id}`);
-  
-  const message = { action: MESSAGE_ACTIONS.NO_CODE_FOUND };
-  
-  const result = await processTab(activeTab, message, 'No-code notification shown');
-  
-  return result;
+
+  const payload = {
+    action: MESSAGE_ACTIONS.FILL_FAILED,
+    message: message || 'Could not find a verification input on this page'
+  };
+
+  return processTab(targetTab, payload, 'Fill-failed notification shown');
 }

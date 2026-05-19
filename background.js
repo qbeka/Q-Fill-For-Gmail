@@ -10,7 +10,7 @@
 
 import { GmailAPI } from './services/gmail-api.js';
 import { StorageManager } from './services/storage-manager.js';
-import { sendCodeToTabs, sendNoCodeFoundToTabs } from './utils/tab-messenger.js';
+import { sendCodeToTabs, sendFillFailedToTab } from './utils/tab-messenger.js';
 import { 
   TIME, 
   CODE_VALIDATION, 
@@ -76,7 +76,7 @@ class BackgroundManager {
           return true;
           
         case MESSAGE_ACTIONS.FORCE_CHECK_EMAILS:
-          this.checkEmails();
+          this.checkEmails(request.tabId ?? null);
           sendResponse({ success: true });
           return true;
           
@@ -129,9 +129,10 @@ class BackgroundManager {
   }
   
   /**
-   * Check Gmail for verification codes - ONLY checks most recent email
+   * Check recent Gmail messages for a verification code and fill the target tab
+   * @param {number|null} targetTabId - Tab to fill (captured when user clicked Check)
    */
-  async checkEmails() {
+  async checkEmails(targetTabId = null) {
     if (this.isCheckingEmails) {
       console.log('Already checking, skipping');
       return;
@@ -140,42 +141,64 @@ class BackgroundManager {
     this.isCheckingEmails = true;
     
     try {
-      console.log('Checking most recent email for verification code');
+      const isAuthenticated = await this.storage.get('isAuthenticated');
+      if (!isAuthenticated) {
+        this.sendStatusUpdate(CHECKING_STATUS.ERROR, {
+          error: 'Connect to Gmail before checking for codes.'
+        });
+        return;
+      }
+
+      console.log('Checking recent emails for verification code');
       this.sendStatusUpdate(CHECKING_STATUS.CHECKING);
       
-      const messages = await this.gmailApi.getRecentMessages();
+      const messages = await this.gmailApi.getVerificationMessages();
       
       if (!messages || messages.length === 0) {
         console.log('No recent emails found');
         this.showNotification('No emails found', 'No recent emails to check.');
         this.sendStatusUpdate(CHECKING_STATUS.NO_EMAILS);
-        await sendNoCodeFoundToTabs();
         return;
       }
       
-      // ONLY process the single most recent email
-      const messageId = messages[0].id;
-      const extractedCode = await this.processMessage(messageId);
+      let extractedCode = null;
+      for (const message of messages) {
+        extractedCode = await this.processMessage(message.id);
+        if (extractedCode) break;
+      }
       
       if (extractedCode) {
         console.log(`Found code: ${extractedCode}`);
-        this.sendStatusUpdate(CHECKING_STATUS.CODE_FOUND, { code: extractedCode });
-        await sendCodeToTabs(extractedCode);
+        const fillResult = await sendCodeToTabs(extractedCode, targetTabId);
+
+        if (fillResult.success) {
+          this.sendStatusUpdate(CHECKING_STATUS.CODE_FOUND, {
+            code: extractedCode,
+            filled: true
+          });
+        } else {
+          const fillMessage = fillResult.message
+            || 'Code found but could not fill the form on this page.';
+          this.sendStatusUpdate(CHECKING_STATUS.FILL_FAILED, {
+            code: extractedCode,
+            filled: false,
+            error: fillMessage
+          });
+          await sendFillFailedToTab(targetTabId, fillMessage);
+        }
       } else {
-        console.log('No code in most recent email');
-        this.showNotification('No code found', 'Most recent email has no verification code.');
+        console.log('No verification code in recent emails');
+        this.showNotification('No code found', 'No verification code in your recent emails.');
         this.sendStatusUpdate(CHECKING_STATUS.NO_CODE_FOUND);
-        await sendNoCodeFoundToTabs();
       }
     } catch (error) {
       console.error('Error:', error);
       this.sendStatusUpdate(CHECKING_STATUS.ERROR, { error: error.message });
-      await sendNoCodeFoundToTabs();
       
       if (error.message?.includes('401')) {
         try {
           await this.gmailApi.removeToken();
-          await this.gmailApi.getToken(false);
+          await this.storage.set('isAuthenticated', false);
         } catch (e) {}
       }
     } finally {
@@ -288,24 +311,29 @@ class BackgroundManager {
       console.log('Email does not appear to be verification-related');
       return null;
     }
+
+    const requireHighConfidence = !hasStrongContext;
     
     // Collect all candidate codes with scores
     const candidates = [];
     
     // === PATTERN 1: Explicit "code is X" or "code: X" patterns ===
+    const codeCapture = '([0-9]{4,8}|[A-Z0-9]{4,8})';
     const explicitPatterns = [
-      /(?:verification|security|confirmation|login|sign-?in|auth(?:entication)?|one-?time|otp|2fa)\s*code\s*(?:is|:|\s)\s*[:=]?\s*([0-9]{4,8})/gi,
-      /(?:your|the)\s+(?:code|otp|pin|passcode)\s*(?:is|:)\s*[:=]?\s*([0-9]{4,8})/gi,
-      /(?:code|pin|otp|passcode)\s*[:=]\s*([0-9]{4,8})/gi,
-      /(?:enter|use|input)\s+(?:code|otp)?\s*[:=]?\s*([0-9]{4,8})/gi,
+      new RegExp(`(?:verification|security|confirmation|login|sign-?in|auth(?:entication)?|one-?time|otp|2fa)\\s*code\\s*(?:is|:|\\s)\\s*[:=]?\\s*${codeCapture}`, 'gi'),
+      new RegExp(`(?:your|the)\\s+(?:code|otp|pin|passcode)\\s*(?:is|:)\\s*[:=]?\\s*${codeCapture}`, 'gi'),
+      new RegExp(`(?:code|pin|otp|passcode)\\s*[:=]\\s*${codeCapture}`, 'gi'),
+      new RegExp(`(?:enter|use|input)\\s+(?:code|otp)?\\s*[:=]?\\s*${codeCapture}`, 'gi'),
     ];
     
     for (const pattern of explicitPatterns) {
       let match;
       while ((match = pattern.exec(cleanText)) !== null) {
-        const code = match[1].replace(/\s/g, '');
+        const code = match[1].replace(/\s/g, '').toUpperCase();
         if (this.isValidCode(code)) {
-          candidates.push({ code, score: 100, source: 'explicit' });
+          const nearby = cleanText.substring(Math.max(0, match.index - 40), match.index + 60).toLowerCase();
+          const phoneContext = /phone|mobile|tel:|call us|\+\d/.test(nearby);
+          candidates.push({ code, score: phoneContext ? 70 : 100, source: 'explicit' });
         }
       }
     }
@@ -385,7 +413,7 @@ class BackgroundManager {
       }
     }
     
-    // === PATTERN 6: Fallback - any standalone 6-digit number (most common) ===
+    // === PATTERN 6: Fallback - only when email clearly mentions verification ===
     if (candidates.length === 0 && hasStrongContext) {
       const fallbackPattern = /\b([0-9]{6})\b/g;
       let match;
@@ -395,6 +423,9 @@ class BackgroundManager {
           candidates.push({ code, score: 40, source: 'fallback6digit' });
         }
       }
+    } else if (candidates.length === 0 && hasWeakContext && !hasStrongContext) {
+      // Weak-only emails: accept explicit/subject matches only (no broad fallback)
+      console.log('Weak context only — skipping numeric fallback');
     }
     
     // === Select the best code ===
@@ -402,9 +433,18 @@ class BackgroundManager {
       console.log('No verification codes found');
       return null;
     }
+
+    const filtered = requireHighConfidence
+      ? candidates.filter(c => c.score >= 75)
+      : candidates;
+
+    if (filtered.length === 0) {
+      console.log('No high-confidence codes in weak-context email');
+      return null;
+    }
     
     // Sort by score (highest first), then prefer 6-digit codes
-    candidates.sort((a, b) => {
+    filtered.sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
       // Prefer 6-digit codes
       const aIs6 = a.code.length === 6 ? 1 : 0;
@@ -413,7 +453,7 @@ class BackgroundManager {
     });
     
     // Remove duplicates and log
-    const uniqueCodes = [...new Map(candidates.map(c => [c.code, c])).values()];
+    const uniqueCodes = [...new Map(filtered.map(c => [c.code, c])).values()];
     console.log('Code candidates:', uniqueCodes.slice(0, 5).map(c => `${c.code} (${c.score}, ${c.source})`));
     
     const bestCode = uniqueCodes[0].code;
@@ -431,8 +471,9 @@ class BackgroundManager {
     const len = code.length;
     if (len < CODE_VALIDATION.MIN_LENGTH || len > CODE_VALIDATION.MAX_LENGTH) return false;
     
-    // Must be numeric for standard codes
-    if (!/^[0-9]+$/.test(code)) return false;
+    // Numeric or alphanumeric (some services use mixed codes)
+    if (!/^[0-9A-Z]+$/i.test(code)) return false;
+    if (/^0x[0-9a-f]+$/i.test(code)) return false;
     
     // Reject all same digits (000000, 111111)
     if (/^(\d)\1+$/.test(code)) return false;

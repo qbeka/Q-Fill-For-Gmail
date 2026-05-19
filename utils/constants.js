@@ -37,9 +37,22 @@ export const CODE_VALIDATION = {
   /** Minimum email content length to likely contain a code */
   MIN_EMAIL_CONTENT_LENGTH: 20,
   
-  /** Maximum results to fetch from Gmail API - only need 1 */
-  MAX_GMAIL_RESULTS: 1
+  /** Recent emails to scan (newest first) for a verification code */
+  MAX_GMAIL_RESULTS: 5,
+
+  /** Max age of emails to consider (Gmail query: newer_than:Nd) */
+  GMAIL_MAX_AGE_DAYS: 2
 };
+
+/**
+ * Gmail search query prioritizing verification-related messages
+ */
+export const GMAIL_VERIFICATION_QUERY = Object.freeze(
+  'newer_than:2d (' +
+    'subject:(verification OR verify OR code OR OTP OR otp OR 2fa OR confirm OR security OR passcode) OR ' +
+    '"verification code" OR "one-time code" OR "one time code" OR "security code"' +
+  ')'
+);
 
 /**
  * Strong verification keywords - high confidence the email contains a code
@@ -176,6 +189,7 @@ export const MESSAGE_ACTIONS = Object.freeze({
   CONTENT_SCRIPT_READY: 'contentScriptReady',
   FILL_CODE: 'fillCode',
   NO_CODE_FOUND: 'noCodeFound',
+  FILL_FAILED: 'fillFailed',
   CHECKING_STATUS: 'checkingStatus'
 });
 
@@ -187,6 +201,7 @@ export const CHECKING_STATUS = Object.freeze({
   NO_EMAILS: 'noEmails',
   CODE_FOUND: 'codeFound',
   NO_CODE_FOUND: 'noCodeFound',
+  FILL_FAILED: 'fillFailed',
   ERROR: 'error'
 });
 
