@@ -2,7 +2,7 @@
 
 A privacy-focused Chrome extension that extracts verification codes from Gmail and auto-fills them into web forms.
 
-[Website](https://qfill.org) | [Privacy Policy](https://qfill.org/privacy) | [Terms of Service](https://qfill.org/terms)
+[Privacy Policy](privacy-policy.md)
 
 ---
 
@@ -432,9 +432,7 @@ This software is proprietary. Unauthorized copying, modification, distribution, 
 
 | Resource | URL |
 |----------|-----|
-| Website | [qfill.org](https://qfill.org) |
-| Privacy Policy | [qfill.org/privacy](https://qfill.org/privacy) |
-| Terms of Service | [qfill.org/terms](https://qfill.org/terms) |
+| Privacy Policy | [privacy-policy.md](privacy-policy.md) |
 | Website Repository | [github.com/qbeka/qfill-website](https://github.com/qbeka/qfill-website) |
 | Author | [github.com/qbeka](https://github.com/qbeka) |
 | LinkedIn | [linkedin.com/in/qendrimbeka](https://linkedin.com/in/qendrimbeka) |
