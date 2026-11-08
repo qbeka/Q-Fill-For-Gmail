@@ -1,0 +1,309 @@
+{
+  "extensionName": {
+    "message": "Q-Fill for Gmail",
+    "description": "Extension name in the toolbar and the store."
+  },
+  "extensionDescription": {
+    "message": "Types the verification code from your newest Gmail message into the page you are on. Read-only, and nothing leaves your browser.",
+    "description": "Store description, at most 132 characters."
+  },
+  "actionTitle": {
+    "message": "Q-Fill: fill the code from Gmail"
+  },
+  "commandOpen": {
+    "message": "Open Q-Fill"
+  },
+  "commandFill": {
+    "message": "Fill the newest code from Gmail"
+  },
+  "setupTitle": {
+    "message": "Set up Q-Fill"
+  },
+  "setupLead": {
+    "message": "Q-Fill reads Gmail with your own Google OAuth client, so no one else ever holds a key to your inbox. It takes about five minutes, once."
+  },
+  "setupStep1": {
+    "message": "Create a Google Cloud project and turn on the Gmail API."
+  },
+  "setupStep2": {
+    "message": "Create an OAuth client of type Web application and add this redirect URI:"
+  },
+  "setupStep3": {
+    "message": "Paste the client ID it gives you:"
+  },
+  "setupGuide": {
+    "message": "Step-by-step guide"
+  },
+  "clientIdPlaceholder": {
+    "message": "1234567890-abc123.apps.googleusercontent.com"
+  },
+  "clientIdInvalid": {
+    "message": "That does not look like a client ID. It ends in .apps.googleusercontent.com."
+  },
+  "save": {
+    "message": "Save"
+  },
+  "copy": {
+    "message": "Copy"
+  },
+  "copied": {
+    "message": "Copied"
+  },
+  "connectTitle": {
+    "message": "Connect Gmail"
+  },
+  "connectLead": {
+    "message": "Q-Fill asks Google for read-only access. It can never send, change or delete mail, and codes never leave your browser."
+  },
+  "connectButton": {
+    "message": "Connect Gmail"
+  },
+  "connectingButton": {
+    "message": "Waiting for Google…"
+  },
+  "connectHint": {
+    "message": "A Google window opens. Pick your account and allow “View your email messages and settings”."
+  },
+  "fillButton": {
+    "message": "Fill code"
+  },
+  "fillHint": {
+    "message": "Open the page that asks for a code, then press Fill. If the email has not arrived yet, Q-Fill waits for it."
+  },
+  "shortcutNone": {
+    "message": "Set a keyboard shortcut"
+  },
+  "cancel": {
+    "message": "Cancel"
+  },
+  "phaseSigningIn": {
+    "message": "Signing in to Google…"
+  },
+  "phaseChecking": {
+    "message": "Checking Gmail…"
+  },
+  "phaseWaiting": {
+    "message": "Waiting for the email…"
+  },
+  "phaseWaitingDetail": {
+    "message": "Checking every few seconds for $SECONDS$ more seconds. You can close this window.",
+    "placeholders": {
+      "seconds": {
+        "content": "$1",
+        "example": "42"
+      }
+    }
+  },
+  "phaseFilling": {
+    "message": "Filling the page…"
+  },
+  "resultFilled": {
+    "message": "Filled"
+  },
+  "resultFound": {
+    "message": "Found, not filled"
+  },
+  "resultFromSender": {
+    "message": "From $SENDER$, $AGO$",
+    "placeholders": {
+      "sender": {
+        "content": "$1",
+        "example": "Acme"
+      },
+      "ago": {
+        "content": "$2",
+        "example": "2 min ago"
+      }
+    }
+  },
+  "resultNoField": {
+    "message": "No code field on this page. Copy the code and paste it yourself."
+  },
+  "resultRejected": {
+    "message": "The page did not accept the code. Copy it and paste it yourself."
+  },
+  "resultBlocked": {
+    "message": "This page does not allow extensions. Copy the code and paste it yourself."
+  },
+  "resultGone": {
+    "message": "The tab was closed before the code arrived."
+  },
+  "resultNone": {
+    "message": "No verification email in the last $MINUTES$ minutes.",
+    "placeholders": {
+      "minutes": {
+        "content": "$1",
+        "example": "10"
+      }
+    }
+  },
+  "resultNoneHint": {
+    "message": "Check the code was sent to this Gmail address, or look further back in Settings."
+  },
+  "resultCancelled": {
+    "message": "Stopped."
+  },
+  "agoNow": {
+    "message": "just now"
+  },
+  "agoMinutes": {
+    "message": "$N$ min ago",
+    "placeholders": {
+      "n": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "settingsTitle": {
+    "message": "Settings"
+  },
+  "settingsBack": {
+    "message": "Back"
+  },
+  "settingsAccount": {
+    "message": "Gmail account"
+  },
+  "settingsLookback": {
+    "message": "Look back"
+  },
+  "settingsLookbackOption": {
+    "message": "$N$ minutes",
+    "placeholders": {
+      "n": {
+        "content": "$1",
+        "example": "10"
+      }
+    }
+  },
+  "settingsLookbackHint": {
+    "message": "Q-Fill only uses codes from emails this recent."
+  },
+  "settingsShortcut": {
+    "message": "Keyboard shortcut"
+  },
+  "settingsShortcutChange": {
+    "message": "Change"
+  },
+  "settingsClient": {
+    "message": "OAuth client"
+  },
+  "settingsRedirect": {
+    "message": "Redirect URI"
+  },
+  "settingsChangeClient": {
+    "message": "Change client ID"
+  },
+  "disconnect": {
+    "message": "Disconnect Gmail"
+  },
+  "notConnected": {
+    "message": "Not connected"
+  },
+  "privacyLink": {
+    "message": "Privacy"
+  },
+  "sourceLink": {
+    "message": "Source"
+  },
+  "versionLabel": {
+    "message": "Version $VERSION$",
+    "placeholders": {
+      "version": {
+        "content": "$1",
+        "example": "2.0.0"
+      }
+    }
+  },
+  "toastWaiting": {
+    "message": "Waiting for the verification email…"
+  },
+  "toastFilled": {
+    "message": "Filled $CODE$ from $SENDER$",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "482913"
+      },
+      "sender": {
+        "content": "$2",
+        "example": "Acme"
+      }
+    }
+  },
+  "toastNoField": {
+    "message": "Found $CODE$ but no code field here. Copy it from the Q-Fill popup.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "482913"
+      }
+    }
+  },
+  "toastRejected": {
+    "message": "Found $CODE$ but the page did not accept it. Copy it from the Q-Fill popup.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "482913"
+      }
+    }
+  },
+  "toastNoCode": {
+    "message": "No new verification email arrived."
+  },
+  "toastConnectFirst": {
+    "message": "Open Q-Fill from the toolbar to connect Gmail first."
+  },
+  "errorNoClientId": {
+    "message": "Add your OAuth client ID first."
+  },
+  "errorSignInCancelled": {
+    "message": "The Google window closed before sign-in finished. If Google showed redirect_uri_mismatch, add the redirect URI from Settings to your OAuth client."
+  },
+  "errorAccessDenied": {
+    "message": "Google did not grant access. If your OAuth app is in testing, add your Gmail address as a test user."
+  },
+  "errorScopeDenied": {
+    "message": "Allow “View your email messages and settings” on the Google screen. Q-Fill needs it to find codes."
+  },
+  "errorSignInAgain": {
+    "message": "Your Google sign-in expired. Press Fill again to sign back in."
+  },
+  "errorSignInFailed": {
+    "message": "Google sign-in failed: $DETAIL$",
+    "placeholders": {
+      "detail": {
+        "content": "$1",
+        "example": "invalid_client"
+      }
+    }
+  },
+  "errorOffline": {
+    "message": "Could not reach Gmail. Check your internet connection."
+  },
+  "errorGmailForbidden": {
+    "message": "Gmail refused the request. Make sure the Gmail API is turned on in your Google Cloud project."
+  },
+  "errorRateLimited": {
+    "message": "Gmail asked Q-Fill to slow down. Try again in a minute."
+  },
+  "errorGmail": {
+    "message": "Gmail error: $DETAIL$",
+    "placeholders": {
+      "detail": {
+        "content": "$1",
+        "example": "Backend Error"
+      }
+    }
+  },
+  "errorUnexpected": {
+    "message": "Something went wrong: $DETAIL$",
+    "placeholders": {
+      "detail": {
+        "content": "$1",
+        "example": "TypeError"
+      }
+    }
+  }
+}
