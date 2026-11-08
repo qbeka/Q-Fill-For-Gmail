@@ -1,0 +1,41 @@
+name: Missed or wrong code
+description: Q-Fill found no code, or the wrong one, in a real email.
+labels: [extraction]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks, these reports make Q-Fill better for everyone. Before you paste anything, replace the real code and any personal details with made-up values of the same shape, for example 482913 for a six-digit code.
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: What happened
+      options:
+        - It found no code
+        - It found the wrong code
+        - It filled a code from an older email
+    validations:
+      required: true
+  - type: input
+    id: subject
+    attributes:
+      label: Email subject
+      placeholder: Your Acme verification code
+  - type: textarea
+    id: body
+    attributes:
+      label: The lines around the code
+      description: A few lines before and after the code are enough. Plain text is fine.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: expected
+    attributes:
+      label: The code it should have found (made up, same shape)
+      placeholder: '482913'
+  - type: input
+    id: language
+    attributes:
+      label: Email language
+      placeholder: English

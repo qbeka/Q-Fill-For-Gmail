@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security problem
+    url: https://github.com/qbeka/Q-Fill-For-Gmail/security/advisories/new
+    about: Please report vulnerabilities privately, not in a public issue.
+  - name: Setup help
+    url: https://github.com/qbeka/Q-Fill-For-Gmail/blob/main/docs/setup.md#if-something-goes-wrong
+    about: Most sign-in problems are covered in the setup guide.
