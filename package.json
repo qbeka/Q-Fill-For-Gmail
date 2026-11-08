@@ -1,0 +1,33 @@
+{
+  "name": "q-fill-for-gmail",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Browser extension that finds the verification code in your newest Gmail message and types it into the page you are on.",
+  "license": "MIT",
+  "author": "Qendrim Beka",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/qbeka/Q-Fill-For-Gmail.git"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test \"test/unit/**/*.test.js\"",
+    "test:e2e": "node --test --test-concurrency=1 \"test/e2e/**/*.test.js\"",
+    "test:all": "npm test && npm run test:e2e",
+    "lint": "eslint .",
+    "check": "npm run lint && npm test && node scripts/check-extension.mjs",
+    "package": "node scripts/package.mjs",
+    "icons": "node scripts/render-icons.mjs",
+    "screenshots": "node scripts/screenshots.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "geist": "^1.9.2",
+    "globals": "^17.14.0",
+    "playwright": "^1.65.0"
+  }
+}
