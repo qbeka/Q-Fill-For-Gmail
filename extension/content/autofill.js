@@ -37,6 +37,19 @@
     'amount', 'price', 'quantity', 'qty', 'date', 'year', 'month', 'day', 'birthday', 'dob',
     'url', 'website', 'company', 'captcha'
   ];
+  /**
+   * Fields that name a code but want a different one. These count against a
+   * field even though they contain the word "code" or "pin".
+   */
+  const OTHER_CODES = [
+    'promo', 'promocode', 'promotion', 'promotional', 'coupon', 'discount', 'voucher', 'gift',
+    'giftcard', 'referral', 'invite', 'invitation', 'zip', 'zipcode', 'postal', 'postcode',
+    'country code', 'area code', 'dial code', 'calling code', 'search', 'q', 'query',
+    'reward', 'redeem', 'redemption', 'offer', 'card', 'cvv', 'cvc', 'csc', 'atm',
+    'tracking', 'booking', 'reference', 'order', 'serial', 'license', 'product', 'captcha'
+  ];
+  /** Never a verification code, whatever else the field says. */
+  const NEVER = ['cvv', 'cvv2', 'cvc', 'csc', 'card', 'credit', 'debit', 'iban', 'ssn', 'captcha'];
   const SKIP_TYPES = new Set([
     'button', 'checkbox', 'color', 'date', 'datetime-local', 'email', 'file', 'hidden',
     'image', 'month', 'radio', 'range', 'reset', 'search', 'submit', 'time', 'url', 'week'
@@ -133,6 +146,19 @@
     return words(parts.join(' ').slice(0, 600));
   }
 
+  /** The field's own label only, without the text of nearby fields. */
+  function ownLabelText(el) {
+    const parts = [el.getAttribute('aria-label') || '', el.getAttribute('placeholder') || ''];
+    try {
+      for (const label of el.labels || []) parts.push(label.textContent);
+    } catch {
+      /* contenteditable has no labels */
+    }
+    const prev = el.previousElementSibling;
+    if (prev && !prev.matches(FIELD_SELECTOR) && (prev.textContent || '').length < 80) parts.push(prev.textContent);
+    return words(parts.join(' '));
+  }
+
   function attributeText(el) {
     const attrs = ['id', 'name', 'class', 'placeholder', 'aria-label', 'title', 'autocomplete',
       'data-testid', 'data-test', 'data-cy', 'data-qa', 'formcontrolname', 'ng-model', 'v-model'];
@@ -154,10 +180,27 @@
     const maxLength = typeof el.maxLength === 'number' ? el.maxLength : -1;
     let score = 0;
 
-    if (autocomplete.split(/\s+/).includes('one-time-code')) score += 300;
+    const oneTimeCode = autocomplete.split(/\s+/).includes('one-time-code');
+    if (oneTimeCode) score += 300;
 
-    const attrPositive = hasAny(attrs, DEFINITIVE) || hasAny(attrs, STRONG) || hasAny(attrs, MEDIUM);
-    const labelPositive = hasAny(label, DEFINITIVE) || hasAny(label, STRONG) || hasAny(label, MEDIUM);
+    const ownLabel = ownLabelText(el);
+    const attrStrong = hasAny(attrs, DEFINITIVE) || hasAny(attrs, STRONG);
+    const labelStrong = hasAny(label, DEFINITIVE) || hasAny(label, STRONG);
+    const attrPositive = attrStrong || hasAny(attrs, MEDIUM);
+    const labelPositive = labelStrong || hasAny(label, MEDIUM);
+
+    if (!oneTimeCode && (hasAny(attrs, NEVER) || hasAny(ownLabel, NEVER))) return -1000;
+
+    // A password field is only a code field when it says so outright.
+    if (type === 'password' && !oneTimeCode && !hasAny(attrs, DEFINITIVE) && !hasAny(ownLabel, DEFINITIVE)) {
+      return -1000;
+    }
+
+    // "Promo code", "ZIP code", "gift card code": the word "code" is not enough.
+    const otherCode = hasAny(attrs, OTHER_CODES) || hasAny(ownLabel, OTHER_CODES);
+    if (otherCode && !oneTimeCode && !attrStrong && !hasAny(ownLabel, DEFINITIVE) && !hasAny(ownLabel, STRONG)) {
+      return -1000;
+    }
 
     if (hasAny(attrs, DEFINITIVE)) score += 150;
     else if (hasAny(attrs, STRONG)) score += 70;
@@ -175,7 +218,6 @@
     if (inputMode === 'numeric' || inputMode === 'decimal') score += 40;
     if (type === 'tel') score += 20;
     if (type === 'number') score += 15;
-    if (type === 'password' && !attrPositive) score -= 120;
     if (el.pattern && /\\d|\[0-9\]/.test(el.pattern)) score += 25;
 
     if (el === active) score += 70;
@@ -201,7 +243,7 @@
     const boxes = fields.filter(el => {
       if (el.tagName !== 'INPUT') return false;
       const rect = el.getBoundingClientRect();
-      return el.maxLength === 1 || rect.width <= 64;
+      return el.maxLength === 1 || (el.maxLength <= 0 && rect.width <= 64);
     });
 
     const rows = [];
@@ -233,6 +275,20 @@
   }
 
   /**
+   * True for one segment of a multi-part number, such as a card number split
+   * into four boxes of four digits. Such a field never takes a whole code.
+   * @param {HTMLInputElement} el
+   */
+  function isSegment(el) {
+    if (el.tagName !== 'INPUT' || !(el.maxLength > 1) || !el.parentElement) return false;
+    const top = el.getBoundingClientRect().top;
+    const peers = [...el.parentElement.children].filter(other =>
+      other !== el && other.tagName === 'INPUT' && other.maxLength > 1 &&
+      Math.abs(other.getBoundingClientRect().top - top) < 8);
+    return peers.length >= 2;
+  }
+
+  /**
    * Picks where the code goes: one input, or a row of single-digit boxes.
    * @param {number} codeLength
    */
@@ -257,6 +313,7 @@
       const max = el.maxLength;
       // A box that holds fewer characters than the code cannot take it whole.
       if (typeof max === 'number' && max > 0 && max < codeLength) continue;
+      if (isSegment(el)) continue;
       const score = scores.get(el);
       if (!bestSingle || score > bestSingle.score) bestSingle = { kind: 'single', fields: [el], score };
     }
