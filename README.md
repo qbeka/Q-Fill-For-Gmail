@@ -44,8 +44,8 @@ If the email has not arrived yet, Q-Fill keeps checking for 90 seconds and fills
 
 Q-Fill is not in the Chrome Web Store. You load it yourself and connect it to an OAuth client you create, which takes about five minutes once.
 
-1. Download the code: `git clone https://github.com/qbeka/Q-Fill-For-Gmail.git`, or download the ZIP from the green **Code** button and unzip it.
-2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and pick the **`extension`** folder inside the download.
+1. Download `q-fill-<version>.zip` from the [latest release](https://github.com/qbeka/Q-Fill-For-Gmail/releases/latest) and unzip it. Or clone the repository and use its `extension` folder.
+2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and pick the unzipped folder (or the repository's **`extension`** folder).
 3. A setup page opens with your redirect URI. Follow [docs/setup.md](docs/setup.md) to create the OAuth client in Google Cloud, then paste its client ID into Q-Fill.
 4. Click **Connect Gmail**, pick your account and allow "View your email messages and settings".
 
