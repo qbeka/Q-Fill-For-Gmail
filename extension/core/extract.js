@@ -47,7 +47,16 @@ const OTHER_NUMBER =
   /(?:order|invoice|receipt|ref|reference|account|acct|ticket|case|tracking|booking|reservation|itinerary|flight|zip|postal|suite|apt|unit|room|phone|tel|telephone|fax|call|ext|extension|sku|model|serial|item|member|customer|policy|loan|card|ending in|last four|no\.?|number|nr\.?|id)\s*[:#.]?\s*$/i;
 
 /** Marketing context that makes a token a promo code, never an OTP. */
-const PROMO = /(?:promo|coupon|discount|voucher|referral|gift card|\d+\s?%|\boff\b|save|sale|deal)/i;
+const PROMO = /(?:promo|coupon|discount|voucher|referral|gift card|\d+\s?%|\boff\b|save|sale|deal|at checkout|redeem)/i;
+
+/** Meeting invites carry passcodes and PINs that are not for signing in. */
+const MEETING = /(?:meeting|zoom|webex|teams|webinar|conference|dial[- ]?in|join by phone|call-in|bridge)/i;
+
+/** PINs that belong to something other than a sign-in. */
+const OTHER_PIN = /(?:support|account|card|atm|sim|voicemail|door|gate|customer|phone|parking)\s+pin\s*[:#]?\s*$/i;
+
+/** Wording right after a token that says it is no longer the code to use. */
+const EXPIRED_AFTER = /^\W{0,3}(?:has|had|have|is|was)?\s*(?:expired|no longer valid|been used|already used|invalid|cancell?ed|replaced)/i;
 
 /** An email that reads like marketing. Codes in it need verification wording to count. */
 const PROMO_EMAIL = /(?:promo code|coupon|discount|voucher|\d+\s?% off|use code|redeem|gift card|referral)/i;
@@ -59,8 +68,11 @@ const NOT_A_CODE_WORD = /^(?:bar|zip|post|promo|source|qr|area|dress|error|statu
 const IS_WORD = String.raw`(?:(?<!\p{L})(?:is|es|est|ist|lautet|è|é|är|er|jest|je|wynosi|to)|为|為|是|は)`;
 
 /** Any of these anywhere in the email shows it is about verification. */
-const INTENT =
-  /(verif|one[- ]?time|otp|2fa|mfa|two[- ]factor|2-step|two-step|passcode|security code|login code|sign[- ]?in|log[- ]?in|authenticat|confirm your|confirmation code|access code|c[oó]digo|codice|bestätigung|sicherheitscode|anmeld|vérification|connexion|kod|код|подтвержд|認証|確認コード|验证码|驗證碼|인증)/iu;
+const STRONG_INTENT =
+  /(verif|one[- ]?time|otp|2fa|mfa|two[- ]factor|2-step|two-step|passcode|security code|login code|sign[- ]?in code|authenticat|confirmation code|access code|c[oó]digo|codice|bestätigung|sicherheitscode|anmeldecode|vérification|kod|код|подтвержд|認証|確認コード|验证码|驗證碼|인증)/iu;
+
+/** Weaker hints that also appear in marketing footers ("Log in to your account"). */
+const WEAK_INTENT = /(sign[- ]?in|log[- ]?in|confirm your|connexion|anmeld)/iu;
 
 const THRESHOLD = 60;
 const BEFORE_WINDOW = 160;
@@ -73,7 +85,7 @@ const AFTER_WINDOW = 90;
  */
 const TOKEN = new RegExp(
   String.raw`(?<![\p{L}\p{N}$€£¥₹#@+&_/\\©])(?<!\p{N}[.,:/-])` +
-  String.raw`(\d{3}[ -]\d{3}|\d{4}[ -]\d{4}|\d{2} \d{2} \d{2}|[A-Z0-9]{3,4}-[A-Z0-9]{3,4}|\d{4,8}|[A-Z0-9]{4,8})` +
+  String.raw`(\d(?: \d){3,7}|\d{3}[ -]\d{3}|\d{4}[ -]\d{4}|\d{2} \d{2} \d{2}|[A-Z0-9]{3,4}-[A-Z0-9]{3,4}|\d{4,8}|[A-Z0-9]{4,8})` +
   String.raw`(?![\p{L}\p{N}%_/\\@])(?![.,:/-]\p{N})`,
   'gu'
 );
@@ -162,6 +174,8 @@ function findLabels(text) {
     const before = text.slice(Math.max(0, match.index - 24), match.index);
     if (NOT_A_CODE_LABEL.test(before)) continue;
     if (NOT_A_CODE_WORD.test(match[0])) continue;
+    // "code of conduct", "code of practice"
+    if (/^\s+of\s/i.test(text.slice(match.index + match[0].length, match.index + match[0].length + 5))) continue;
     if (/^(?:code|pin|token)$/i.test(match[0]) && /(?:promo|coupon|discount|zip|postal|area|tracking|referral|invite)\s*$/i.test(before)) continue;
     labels.push({ start: match.index, end: match.index + match[0].length });
   }
@@ -170,12 +184,13 @@ function findLabels(text) {
 
 /**
  * @param {string} token
- * @returns {{ code: string, kind: 'numeric'|'spaced'|'mixed'|'letters' } | null}
+ * @returns {{ code: string, kind: 'numeric'|'spaced'|'spread'|'mixed'|'letters' } | null}
  */
 function classifyToken(token) {
   const code = token.replace(/[ -]/g, '');
   if (code.length < 4 || code.length > 8) return null;
   if (/^\d+$/.test(code)) {
+    if (/^\d(?: \d)+$/.test(token)) return { code, kind: 'spread' };
     return { code, kind: token.length === code.length ? 'numeric' : 'spaced' };
   }
   if (NOT_CODES.has(code)) return null;
@@ -191,8 +206,9 @@ function classifyToken(token) {
  */
 function scoreTokens(full, subjectLength, html) {
   const labels = findLabels(full);
-  const intent = INTENT.test(full);
-  const promoEmail = !intent && PROMO_EMAIL.test(full);
+  const strongIntent = STRONG_INTENT.test(full);
+  const intent = strongIntent || WEAK_INTENT.test(full);
+  const promoEmail = !strongIntent && PROMO_EMAIL.test(full);
   const candidates = [];
 
   for (const match of full.matchAll(TOKEN)) {
@@ -203,7 +219,7 @@ function scoreTokens(full, subjectLength, html) {
     if (!info) continue;
 
     // Spaced codes must not be one group of a longer number such as a phone number.
-    if (info.kind === 'spaced') {
+    if (info.kind === 'spaced' || info.kind === 'spread') {
       if (/\d[ -]$/.test(full.slice(Math.max(0, start - 2), start))) continue;
       if (/^[ -]\d/.test(full.slice(end, end + 2))) continue;
     }
@@ -251,14 +267,15 @@ function scoreTokens(full, subjectLength, html) {
       reason = 'action';
     }
 
-    if (score === 0 && !intent) continue;
+    // With no label at all, only an email that is clearly about verification counts.
+    if (score === 0 && !strongIntent) continue;
     if (score === 0) {
-      score = 40;
+      score = 30;
       reason = 'intent';
     }
 
     const inSubject = start < subjectLength;
-    if (inSubject && intent) {
+    if (inSubject && strongIntent) {
       score += 20;
       reason += '+subject';
     }
@@ -267,12 +284,12 @@ function scoreTokens(full, subjectLength, html) {
     const lineStart = full.lastIndexOf('\n', start - 1) + 1;
     const lineEndRaw = full.indexOf('\n', end);
     const line = full.slice(lineStart, lineEndRaw === -1 ? full.length : lineEndRaw).trim();
-    if (line === token && intent) {
+    if (line === token && strongIntent) {
       score += 25;
       reason += '+own-line';
     }
 
-    if (html && intent) {
+    if (html && strongIntent) {
       const emphasis = htmlEmphasis(html, token);
       if (emphasis) {
         score += emphasis;
@@ -287,9 +304,13 @@ function scoreTokens(full, subjectLength, html) {
       score -= 25;
     }
     if (info.kind === 'mixed' && !strongLabel) score -= 25;
+    if (info.kind === 'spread' && !strongLabel) continue;
     if (info.kind === 'spaced' && !strongLabel && !reason.startsWith('near-label')) score -= 15;
     if (OTHER_NUMBER.test(near)) score -= 70;
-    if (PROMO.test(near) || PROMO.test(after.slice(0, 20))) score -= 80;
+    if (PROMO.test(near) || PROMO.test(after.slice(0, 30))) score -= 80;
+    if (MEETING.test(before)) score -= 80;
+    if (OTHER_PIN.test(near)) score -= 70;
+    if (EXPIRED_AFTER.test(after)) score -= 60;
     if (/^\s*(?:usd|eur|gbp|cad|aud|dollars?|euros?|points|miles|pts|reviews?|items?|people|users|followers|views|steps|calories|kb|mb|gb|km|mi|ms|px)\b/i.test(after)) score -= 70;
     if (info.kind === 'numeric' && info.code.length === 4 && /^(?:19|20)\d\d$/.test(info.code) && !strongLabel) score -= 45;
     if (/^(\d)\1+$/.test(info.code)) score -= 30;

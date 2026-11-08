@@ -281,6 +281,24 @@ export const POSITIVE = [
     expect: '222333'
   },
   {
+    name: 'an expired code before the new one',
+    subject: 'Your new verification code',
+    text: 'Your previous code 111222 has expired. Your new verification code is 583920.',
+    expect: '583920'
+  },
+  {
+    name: 'one digit per space',
+    subject: 'Verify your email',
+    text: 'Your verification code is 6 0 4 1 9 2',
+    expect: '604192'
+  },
+  {
+    name: 'plain PIN with a name in capitals',
+    subject: 'Your Acme PIN',
+    text: 'Hi JOHNDOE,\n\nYour PIN is 4829.',
+    expect: '4829'
+  },
+  {
     name: 'code above a long paragraph',
     subject: 'Your sign-in code',
     text: '557104\n\nEnter this code to finish signing in. For your security, we will never ask you for this code by phone or by email. If you did not request a code, you can ignore this message.',
@@ -377,6 +395,42 @@ export const NEGATIVE = [
     name: 'meeting with dial-in',
     subject: 'Meeting details',
     text: 'Meeting ID: 845 2201 9934\nPasscode for dial-in is listed in the calendar.',
+    expect: null
+  },
+  {
+    name: 'promo code with a log in link in the footer',
+    subject: 'Spring sale starts now',
+    text: 'Use code SPRING25 at checkout for free shipping.\n\nLog in to your account to see more deals.',
+    expect: null
+  },
+  {
+    name: 'meeting invite with a passcode',
+    subject: 'Invitation: Design review',
+    text: 'Join the meeting\nMeeting ID: 845 2231 9910\nPasscode: 739201\nDial in: +1 555 012 3456',
+    expect: null
+  },
+  {
+    name: 'support PIN',
+    subject: 'Your support request',
+    text: 'Thanks for contacting us. Support PIN: 7731. Quote it when you call.',
+    expect: null
+  },
+  {
+    name: 'invoice total on its own line',
+    subject: 'Your invoice is ready',
+    text: 'Log in to view your invoice.\n\nTotal\n4999\n\nThanks for your business.',
+    expect: null
+  },
+  {
+    name: 'newsletter count on its own line',
+    subject: 'This week in the community',
+    text: 'Sign in to read the full story.\n\n12500\nreaders joined this week',
+    expect: null
+  },
+  {
+    name: 'security notice with a code of conduct year',
+    subject: '2-Step Verification turned on',
+    text: '2-Step Verification is now on for your account.\nYou will now use your phone ending in 4821 to sign in.\n\nCode of conduct: 1998',
     expect: null
   },
   {
