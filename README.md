@@ -1,448 +1,147 @@
+<div align="center">
+
+<img src="extension/icons/icon-128.png" width="72" height="72" alt="">
+
 # Q-Fill for Gmail
 
-A privacy-focused Chrome extension that extracts verification codes from Gmail and auto-fills them into web forms.
+Fill the verification code from your newest Gmail message into the page you are on with one click, without your email ever leaving your browser
 
-[Privacy Policy](privacy-policy.md)
+[![CI](https://github.com/qbeka/Q-Fill-For-Gmail/actions/workflows/ci.yml/badge.svg)](https://github.com/qbeka/Q-Fill-For-Gmail/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-1d3a2a.svg)](LICENSE)
+![Manifest V3](https://img.shields.io/badge/manifest-v3-1d3a2a.svg)
+![No dependencies at runtime](https://img.shields.io/badge/runtime%20dependencies-0-1d3a2a.svg)
 
----
+<img src="docs/images/fill.png" width="560" alt="A six-box code form filled with 204816, with a Q-Fill message at the bottom of the page">
 
-## Table of Contents
+</div>
 
-- [About](#about)
-- [Features](#features)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [Usage](#usage)
-- [Project Structure](#project-structure)
-- [Development](#development)
-- [Contributing](#contributing)
-- [Security](#security)
-- [Troubleshooting](#troubleshooting)
-- [License](#license)
-- [Links](#links)
+## What it does
 
----
+A site emails you a code. Instead of switching to Gmail, finding the email and copying six digits, you press **Fill code** (or <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>) and Q-Fill:
 
-## About
+1. Reads your most recent Gmail messages with read-only access.
+2. Finds the verification code in the newest one that has a code.
+3. Types it into the code field on the page, including split six-box fields, fields in iframes and fields inside web components.
 
-Q-Fill connects to your Gmail account with read-only access, scans recent emails for verification codes, and fills them into form fields on the active browser tab. All processing happens locally in your browser. No data is sent to external servers.
+If the email has not arrived yet, Q-Fill keeps checking for 90 seconds and fills the code the moment it lands. You can close the popup and keep working.
 
-**Website repository:** [github.com/qbeka/qfill-website](https://github.com/qbeka/qfill-website) (source code, not open source)
+<table>
+  <tr>
+    <td><img src="docs/images/popup-filled.png" width="300" alt="Popup showing a filled code with a Copy button"></td>
+    <td><img src="docs/images/popup-waiting.png" width="300" alt="Popup waiting for the verification email"></td>
+  </tr>
+</table>
 
----
+## Why it is built this way
 
-## Features
+- **Your own OAuth client.** Q-Fill connects to Gmail through a Google OAuth client that you create. No company, including the author, holds a key to your inbox, and there is no server.
+- **Nothing runs until you ask.** There is no content script on every site. Q-Fill touches a page only after you click its icon or press its shortcut, through Chrome's `activeTab` permission.
+- **Read-only.** The only Gmail scope is `gmail.readonly`. Q-Fill cannot send, change or delete mail.
+- **Memory only.** The access token, the last code and the list of emails already used live in `chrome.storage.session`, which the browser clears when it closes. See [PRIVACY.md](PRIVACY.md).
+- **No build step.** The `extension/` folder is the extension. It has no runtime dependencies and loads as it is.
 
-| Feature | Description |
-|---------|-------------|
-| Code extraction | Detects 4-8 digit verification codes from email content |
-| Auto-fill | Fills codes into the active tab's form fields |
-| OTP support | Handles multi-input OTP fields (e.g., 6 separate boxes) |
-| Read-only access | Uses `gmail.readonly` scope; cannot modify emails |
-| Local processing | No servers, no data collection, no analytics |
-| Manual trigger | User initiates code check via popup button |
+## Install
 
----
+Q-Fill is not in the Chrome Web Store. You load it yourself and connect it to an OAuth client you create, which takes about five minutes once.
 
-## Prerequisites
+1. Download the code: `git clone https://github.com/qbeka/Q-Fill-For-Gmail.git`, or download the ZIP from the green **Code** button and unzip it.
+2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and pick the **`extension`** folder inside the download.
+3. A setup page opens with your redirect URI. Follow [docs/setup.md](docs/setup.md) to create the OAuth client in Google Cloud, then paste its client ID into Q-Fill.
+4. Click **Connect Gmail**, pick your account and allow "View your email messages and settings".
 
-- Google Chrome 88+ or Microsoft Edge 88+ (Chromium)
-- A Google account with Gmail
-- A Google Cloud project (free tier is sufficient)
+Works in Chrome 116 or later. Q-Fill signs in with `chrome.identity.launchWebAuthFlow`, which Edge, Brave, Arc, Vivaldi and Opera also provide, so it should work there too, but the automated tests run on Chromium only.
 
----
+## Use
 
-## Installation
+| You want to | Do this |
+| --- | --- |
+| Fill a code | Open the page that asks for it, then click the Q-Fill icon and press **Fill code** |
+| Fill without opening the popup | Press <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> (<kbd>Option</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> on a Mac) |
+| Open the popup from the keyboard | Press <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Q</kbd> |
+| Paste the code yourself | Press **Copy** next to the code in the popup |
+| Change the shortcuts | Settings, then **Change**, or go to `chrome://extensions/shortcuts` |
+| Look further back than 10 minutes | Settings, then **Look back**: 2, 5, 10 or 30 minutes |
 
-### Step 1: Clone the repository
+Q-Fill never fills the same email twice. If the only code in your inbox is one it already filled, it waits for a new email instead.
 
-```bash
-git clone https://github.com/qbeka/qfill-extension.git
-cd qfill-extension
-```
+## How it finds the right code
 
-### Step 2: Create a Google Cloud project
+Every code-shaped token in the subject and body gets a score from the words around it. "Your code is 482913", "482913 is your Acme code" and a lone number in a large bold table cell score high. A number next to "order", "invoice", "%" or "promo code", a year, a phone number or a price scores low or is dropped. The best token above a threshold wins, and among emails Q-Fill picks the newest one with a code, not the one with the highest score.
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Click **Select a project** > **New Project**
-3. Enter a project name (e.g., "Q-Fill") and click **Create**
-4. Wait for the project to be created, then select it
+It reads codes of 4 to 8 characters: digits (`482913`), spaced or dashed digits (`482 913`, `482-913`), and upper-case letters with digits (`K7Q2ZP`, `XKD-PTQ`). It understands the usual wording in English, Spanish, Portuguese, French, German, Italian, Polish, Russian, Japanese, Chinese and Korean.
 
-### Step 3: Enable the Gmail API
+On the 62 hand-written test emails in [test/fixtures/emails.js](test/fixtures/emails.js), 46 with a code and 16 without, the extractor gets all 62 right. The 1.x extractor got 38 of the same 62 right and filled years and follower counts from newsletters. These fixtures were written alongside the new extractor, so treat 62 of 62 as a regression baseline, not a measured real-world accuracy. If Q-Fill misses a code in a real email, please [open an issue](https://github.com/qbeka/Q-Fill-For-Gmail/issues/new?template=missed_code.yml) with the wording around the code.
 
-1. In Google Cloud Console, go to **APIs & Services** > **Library**
-2. Search for "Gmail API"
-3. Click **Gmail API** > **Enable**
+More detail, including how the page field is chosen, is in [docs/how-it-works.md](docs/how-it-works.md).
 
-### Step 4: Configure the OAuth consent screen
+## Permissions
 
-1. Go to **APIs & Services** > **OAuth consent screen**
-2. Select **External** and click **Create**
-3. Fill in required fields:
-   - App name: `Q-Fill`
-   - User support email: your email
-   - Developer contact: your email
-4. Click **Save and Continue**
-5. On the Scopes page, click **Add or Remove Scopes**
-6. Find and select `https://www.googleapis.com/auth/gmail.readonly`
-7. Click **Update** > **Save and Continue**
-8. On Test users page, add your Gmail address
-9. Click **Save and Continue** > **Back to Dashboard**
+| Permission | Why |
+| --- | --- |
+| `identity` | Opens the Google sign-in window (`launchWebAuthFlow`). |
+| `storage` | Keeps your client ID, Gmail address and look-back setting, plus the memory-only session data. |
+| `activeTab` | Gives Q-Fill access to the current tab only after you click its icon or press its shortcut. |
+| `scripting` | Puts the autofill script into that tab when you ask for a code. |
+| `https://gmail.googleapis.com/*` | Lists and reads recent messages. |
+| `https://oauth2.googleapis.com/*` | Revokes the token when you disconnect. |
 
-### Step 5: Get your extension ID
+There is no `<all_urls>`, no `tabs` permission and no content script on every page.
 
-1. Open Chrome and navigate to `chrome://extensions`
-2. Enable **Developer mode** (toggle in top right)
-3. Click **Load unpacked**
-4. Select the cloned `qfill-extension` folder
-5. Copy the **ID** displayed under "Q-Fill for Gmail"
+## Develop
 
-### Step 6: Create OAuth credentials
-
-1. In Google Cloud Console, go to **APIs & Services** > **Credentials**
-2. Click **Create Credentials** > **OAuth client ID**
-3. Select **Chrome Extension** as application type
-4. Enter a name (e.g., "Q-Fill Extension")
-5. Paste your extension ID from Step 5
-6. Click **Create**
-7. Copy the **Client ID** (format: `xxxx.apps.googleusercontent.com`)
-
-### Step 7: Configure the extension
-
-Create the configuration files:
+You need Node.js 20 or later.
 
 ```bash
-cp config/config.template.js config/config.js
-cp manifest_template.json manifest.json
+npm install
 ```
-
-See [docs/MANIFEST.md](docs/MANIFEST.md) for what each permission does. For **Edge**, load the unpacked extension at `edge://extensions`, copy its ID, and add a second OAuth client in Google Cloud (Chrome extension type) with that ID.
-
-**Important:** `chrome.identity` only reads the client ID from **`manifest.json`**, not from `config.js`. Edit `manifest.json`:
-
-```json
-"oauth2": {
-  "client_id": "123456789012-abcdefghijklmnop.apps.googleusercontent.com",
-  "scopes": [
-    "https://www.googleapis.com/auth/gmail.readonly"
-  ]
-}
-```
-
-Validate your setup:
 
 ```bash
-node scripts/validate-setup.mjs
+npm test
 ```
 
-### Step 8: Reload and connect
+| Command | What it does |
+| --- | --- |
+| `npm test` | Unit tests for code extraction, message parsing and the search loop (85 tests, under a second) |
+| `npm run test:e2e` | Loads the real extension into Chromium and fills every page in `playground/` (13 tests, about 15 seconds). Run `npx playwright install chromium` once first |
+| `npm run lint` | ESLint |
+| `npm run check` | Lint, unit tests and static checks on `extension/` (manifest paths, strings, store limits, network hosts) |
+| `npm run package` | Writes `dist/q-fill-<version>.zip` for the Chrome Web Store or Edge Add-ons |
+| `npm run screenshots` | Regenerates the images in `docs/images/` |
 
-1. Go to `chrome://extensions`
-2. Click the refresh icon on Q-Fill for Gmail
-3. Click the extension icon in the toolbar
-4. Click **Connect to Gmail**
-5. Complete the OAuth flow in the popup window
+The end-to-end tests fake only two things inside the service worker: Gmail's responses and the Google access token. Everything else, from the search loop to script injection to typing into the page, runs for real. To try the autofill by hand, serve the repository with `npx serve` and open `/playground/`.
 
----
+After you change a file in `extension/`, click the reload icon on Q-Fill's card in `chrome://extensions`.
 
-## Configuration
-
-### Configuration files
-
-| File | Purpose | Git status |
-|------|---------|------------|
-| `manifest.json` | Extension manifest with OAuth client ID | Ignored |
-| `manifest_template.json` | Template for manifest.json | Tracked |
-| `config/config.js` | Runtime configuration | Ignored |
-| `config/config.template.js` | Template for config.js | Tracked |
-
-### Configuration options
-
-In `config/config.js`:
-
-```javascript
-const CONFIG = {
-  OAUTH_CLIENT_ID: 'your-client-id.apps.googleusercontent.com',
-  OAUTH_SCOPES: ['https://www.googleapis.com/auth/gmail.readonly'],
-  VERSION: '1.1.0',
-  DEBUG_MODE: false  // Set to true for verbose console logging
-};
-```
-
----
-
-## Usage
-
-1. Navigate to a webpage with a verification code input field
-2. Trigger a verification email (e.g., login, sign up)
-3. Click the Q-Fill extension icon
-4. Click **Check Emails Now**
-5. The code is extracted and filled automatically
-
-### How it works
-
-1. Q-Fill queries Gmail for emails from the last 5 minutes
-2. It filters for emails containing verification keywords (code, verify, OTP, etc.)
-3. It extracts numeric codes matching 4-8 digit patterns
-4. It identifies the appropriate input field on the active tab
-5. It fills the code and triggers input events for form validation
-
-### Supported input types
-
-- Standard text/number inputs
-- Password inputs used for codes
-- OTP-style multi-digit inputs (6 separate boxes)
-- Contenteditable elements
-
----
-
-## Project Structure
+## Project layout
 
 ```
-qfill-extension/
-├── background.js              # Service worker: Gmail API, message handling
-├── content/                   # Content script modules (fill engine, DOM, UI)
-├── _locales/                  # UI translations (20+ languages)
-├── docs/MANIFEST.md           # Permission reference for manifest_template.json
-├── popup.html                 # Extension popup markup
-├── popup.js                   # Popup logic: auth state, user actions
-├── manifest.json              # Chrome extension manifest (git-ignored)
-├── manifest_template.json     # Manifest template (tracked)
-├── config/
-│   ├── config.js              # OAuth configuration (git-ignored)
-│   └── config.template.js     # Config template (tracked)
-├── services/
-│   ├── gmail-api.js           # Gmail API client wrapper
-│   └── storage-manager.js     # Chrome storage abstraction
-├── utils/
-│   ├── constants.js           # Shared constants and patterns
-│   └── tab-messenger.js       # Tab communication utilities
-├── icons/
-│   ├── icon16.png
-│   ├── icon48.png
-│   └── icon128.png
-├── website/                   # Website source (separate repository)
-├── test-form.html             # Local testing page
-├── privacy-policy.md          # Privacy policy (Markdown)
-├── CHANGELOG.md               # Version history
-└── README.md
+extension/                 the extension, loaded as it is
+  manifest.json
+  background/              service worker: sign-in, Gmail calls, filling
+  core/                    pure logic shared with the tests: extract, parse, search
+  content/autofill.js      injected on demand to pick a field and type the code
+  popup/                   toolbar popup and first-run setup page
+  shared/                  constants and i18n helper
+  _locales/en/             every user-facing string
+playground/                code forms of many kinds, used by the e2e tests
+test/unit/                 node:test unit tests
+test/e2e/                  Playwright tests against the real extension
+scripts/                   checks, packaging, icons and screenshots
+docs/                      setup guide, how it works, images
 ```
 
-### Architecture
+## Limits
 
-```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│   popup.js      │────>│  background.js   │────>│  Gmail API      │
-│   (User action) │     │  (Service worker)│     │  (Google)       │
-└─────────────────┘     └──────────────────┘     └─────────────────┘
-                               │
-                               v
-                        ┌──────────────────┐
-                        │   content/       │
-                        │   (DOM filling)  │
-                        └──────────────────┘
-```
-
----
-
-## Development
-
-### Local setup
-
-1. Clone the repository
-2. Complete the [Installation](#installation) steps
-3. Make changes to source files
-4. Reload the extension at `chrome://extensions`
-
-### Testing
-
-Open `test-form.html` in Chrome to test form filling without a real verification flow.
-
-```bash
-open test-form.html
-# or
-google-chrome test-form.html
-```
-
-### Debug mode
-
-Enable verbose logging:
-
-```javascript
-// config/config.js
-DEBUG_MODE: true
-```
-
-Then open Chrome DevTools:
-- Background script: `chrome://extensions` > Q-Fill > "Inspect views: service worker"
-- Content script: F12 on any webpage > Console
-
-### Code style
-
-- ES modules for service worker imports
-- Vanilla JavaScript (no frameworks)
-- JSDoc comments for public functions
-- Consistent 2-space indentation
-
----
+- Q-Fill reads text. A code that only appears inside an image is not found.
+- Codes longer than 8 characters, and codes in mixed or lower case letters, are not read.
+- Pages that block extensions, such as the Chrome Web Store and `chrome://` pages, cannot be filled. The code is still shown in the popup to copy.
+- A field inside an iframe from a different site than the page, as on some bank verification steps, cannot be filled, because clicking Q-Fill grants access to the page's own site only. The popup shows the code to copy.
+- The Google sign-in window takes focus, so the popup closes while you sign in. Open it again afterwards.
 
 ## Contributing
 
-Contributions are welcome. Please follow these guidelines.
-
-### Getting started
-
-1. Fork the repository
-2. Clone your fork:
-   ```bash
-   git clone https://github.com/YOUR_USERNAME/qfill-extension.git
-   ```
-3. Create a feature branch:
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-4. Make your changes
-5. Test locally by loading the extension unpacked
-6. Commit with a clear message:
-   ```bash
-   git commit -m "Add: description of feature"
-   ```
-7. Push to your fork:
-   ```bash
-   git push origin feature/your-feature-name
-   ```
-8. Open a pull request against `main`
-
-### Commit message format
-
-```
-Type: Short description
-
-Longer description if needed.
-```
-
-Types: `Add`, `Fix`, `Update`, `Remove`, `Refactor`, `Docs`
-
-### Pull request checklist
-
-- [ ] Code follows existing style
-- [ ] Changes tested locally
-- [ ] No `config.js` or `manifest.json` committed
-- [ ] Documentation updated if needed
-- [ ] No console errors or warnings
-
-### Issues
-
-- Search existing issues before creating a new one
-- Use a clear, descriptive title
-- Include steps to reproduce for bugs
-- Include Chrome version and OS
-
----
-
-## Security
-
-### Permissions
-
-| Permission | Reason |
-|------------|--------|
-| `identity` | OAuth authentication with Google |
-| `storage` | Persist connection state locally |
-| `activeTab` | Access the current tab to fill codes |
-| `scripting` | Inject content script for DOM access |
-| `tabs` | Query which tab is active |
-| `notifications` | Show success/error notifications |
-
-### Host permissions
-
-| Host | Reason |
-|------|--------|
-| `googleapis.com` | Gmail API requests |
-| `accounts.google.com` | OAuth flow |
-| `*://*/*` | Fill codes on any website |
-
-### Data handling
-
-- Gmail data is fetched directly from Google to your browser
-- No email content is stored or logged
-- Extracted codes are held in memory only until filled
-- No data is transmitted to external servers
-- No analytics, tracking, or telemetry
-
-### Reporting vulnerabilities
-
-If you discover a security issue, please open a GitHub issue with the label "security".
-
----
-
-## Troubleshooting
-
-### Authentication fails
-
-**Symptom:** "Bad client id" or OAuth error
-
-**Solutions:**
-1. Verify the Client ID is identical in both `config/config.js` and `manifest.json`
-2. Ensure the extension ID in Google Cloud matches your loaded extension
-3. Confirm Gmail API is enabled in your Google Cloud project
-4. Check that your email is added as a test user in OAuth consent screen
-
-### No code found
-
-**Symptom:** Extension says no verification code found
-
-**Solutions:**
-1. Email must have arrived within the last 5 minutes
-2. Email subject or body must contain keywords: code, verify, verification, OTP, etc.
-3. Code must be 4-8 digits
-4. Check spam folder; Q-Fill only reads inbox
-
-### Code not filling
-
-**Symptom:** Code found but not inserted into field
-
-**Solutions:**
-1. Ensure the verification page is the active tab
-2. Refresh the page before clicking "Check Emails Now"
-3. Click inside the input field first
-4. Check browser console (F12) for errors
-
-### Extension not loading
-
-**Symptom:** Extension fails to load or shows errors
-
-**Solutions:**
-1. Verify `manifest.json` exists (copy from `manifest_template.json`)
-2. Check JSON syntax in `manifest.json` and `config/config.js`
-3. Ensure all required files are present
-4. Check `chrome://extensions` for error messages
-
----
+Bug reports, missed codes and pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md). For security issues, see [SECURITY.md](SECURITY.md).
 
 ## License
 
-Copyright 2026 Qendrim Beka. All rights reserved.
-
-This software is proprietary. Unauthorized copying, modification, distribution, or use is prohibited without explicit permission from the author.
-
----
-
-## Links
-
-| Resource | URL |
-|----------|-----|
-| Privacy Policy | [privacy-policy.md](privacy-policy.md) |
-| Website Repository | [github.com/qbeka/qfill-website](https://github.com/qbeka/qfill-website) |
-| Author | [github.com/qbeka](https://github.com/qbeka) |
-| LinkedIn | [linkedin.com/in/qendrimbeka](https://linkedin.com/in/qendrimbeka) |
-
----
-
-## Contact
-
-For questions, bugs, or feature requests, [open an issue on GitHub](https://github.com/qbeka/qfill-extension/issues).
-
-Author: Qendrim Beka
-- [github.com/qbeka](https://github.com/qbeka)
-- [linkedin.com/in/qendrimbeka](https://linkedin.com/in/qendrimbeka)
+[MIT](LICENSE). The bundled Geist fonts are under the SIL Open Font License, see [extension/fonts/LICENSE.txt](extension/fonts/LICENSE.txt).
