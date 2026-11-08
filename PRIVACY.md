@@ -6,7 +6,7 @@ Q-Fill is a browser extension that reads your recent Gmail messages to find a ve
 
 ## What Q-Fill reads
 
-- **Your recent Gmail messages**, only when you press **Fill code** or the shortcut, and only messages received within your look-back window (10 minutes by default). It reads the subject, sender and body to find a code.
+- **Your recent Gmail messages**, only when you press **Fill code** or the shortcut, and only messages received within your look-back window (10 minutes by default) plus one minute, because Gmail's search works in whole seconds. It reads the subject, sender and body to find a code, and ignores any message older than the window.
 - **Your Gmail address**, once, when you connect, so the popup can show which account is connected.
 - **The page you are on**, only after you click Q-Fill's icon or press its shortcut, and only to find the code field and type into it.
 

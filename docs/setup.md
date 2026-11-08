@@ -72,6 +72,7 @@ Open Q-Fill again. It shows your Gmail address and a **Fill code** button. You a
 | Google shows **Error 401: invalid_client** | The client ID is wrong, or the client is not of type **Web application**. Check it in Settings, then **Change client ID**. |
 | Q-Fill says "Gmail refused the request" | Turn on the Gmail API (step 3) in the same project as the OAuth client. |
 | Q-Fill says to allow "View your email messages and settings" | You unticked that permission on the Google screen. Connect again and leave it ticked. |
+| Google asks you to sign in again about once a week | Google may limit how long apps in **Testing** keep access to Gmail. Connect again when asked. |
 | It worked, then stopped after you moved the folder | An unpacked extension's ID comes from its folder path, so moving the folder changes the redirect URI. Add the new URI from Settings to your OAuth client. |
 
 ## Disconnect or remove

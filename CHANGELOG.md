@@ -22,15 +22,15 @@ A rewrite. The extension now lives in `extension/` and loads from a fresh clone 
 - Reads codes in common wording for Spanish, Portuguese, French, German, Italian, Polish, Russian, Japanese, Chinese and Korean emails, plus dashed letter codes such as `XKD-PTQ`.
 - Settings for the look-back window (2, 5, 10 or 30 minutes), the shortcut, the client ID and disconnecting.
 - Dark mode.
-- 85 unit tests, 13 end-to-end tests that load the real extension in Chromium, a playground of form types, CI, and a reproducible ZIP packager.
+- 98 unit tests, 31 end-to-end tests in Chromium (13 that load the real extension and 18 for which fields autofill must and must not touch), a playground of form types, CI, and a reproducible ZIP packager.
 
 ### Changed
 
 - Sign-in uses `chrome.identity.launchWebAuthFlow`, so any Google account works and the extension no longer depends on Chrome's own sign-in.
 - Picks the **newest** email with a code. 1.x scanned 7 days of mail, including trash, and filled the highest-scoring code, which could be an old one.
-- Searches only the look-back window (10 minutes by default) and never fills the same email twice in a session.
-- Code extraction was rewritten around scoring each token by its context. On the 62 test emails in `test/fixtures/emails.js`, 2.0 gets 62 right and 1.x got 38 right. 1.x filled years, follower counts and support ticket numbers from emails with no code.
-- Field detection matches whole words, so "shipping" no longer counts as "pin" and "author" no longer counts as "auth".
+- Searches only the look-back window (10 minutes by default) and never fills the same email twice in a session. A dropped connection or a busy Gmail no longer ends the wait, and a message that fails to load is retried before an older code is used.
+- Code extraction was rewritten around scoring each token by its context. On the 71 test emails in `test/fixtures/emails.js`, 2.0 gets 71 right and 1.x got 44 right. 1.x filled years, follower counts and support ticket numbers from emails with no code.
+- Field detection matches whole words, so "shipping" no longer counts as "pin" and "author" no longer counts as "auth". Promo, coupon, gift card, referral, ZIP, country code, search, card and CVV fields are never filled, and a password field only when it is marked as a one-time code.
 - Each fill is verified by reading the value back. Q-Fill reports success only when the page holds the code.
 - The popup was redesigned and bundles its fonts, so it no longer loads Google Fonts.
 - Released under the MIT license. 1.x was "all rights reserved".

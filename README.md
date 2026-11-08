@@ -62,7 +62,9 @@ Works in Chrome 116 or later. Q-Fill signs in with `chrome.identity.launchWebAut
 | Change the shortcuts | Settings, then **Change**, or go to `chrome://extensions/shortcuts` |
 | Look further back than 10 minutes | Settings, then **Look back**: 2, 5, 10 or 30 minutes |
 
-Q-Fill never fills the same email twice. If the only code in your inbox is one it already filled, it waits for a new email instead.
+Q-Fill never fills the same email twice while the browser is open. If the only code in your inbox is one it already filled, it waits for a new email instead.
+
+If you pressed **Resend** on a site, wait for the new email before pressing Fill. Otherwise Q-Fill may fill the older code, which is still within the look-back window.
 
 ## How it finds the right code
 
@@ -70,7 +72,7 @@ Every code-shaped token in the subject and body gets a score from the words arou
 
 It reads codes of 4 to 8 characters: digits (`482913`), spaced or dashed digits (`482 913`, `482-913`), and upper-case letters with digits (`K7Q2ZP`, `XKD-PTQ`). It understands the usual wording in English, Spanish, Portuguese, French, German, Italian, Polish, Russian, Japanese, Chinese and Korean.
 
-On the 62 hand-written test emails in [test/fixtures/emails.js](test/fixtures/emails.js), 46 with a code and 16 without, the extractor gets all 62 right. The 1.x extractor got 38 of the same 62 right and filled years and follower counts from newsletters. These fixtures were written alongside the new extractor, so treat 62 of 62 as a regression baseline, not a measured real-world accuracy. If Q-Fill misses a code in a real email, please [open an issue](https://github.com/qbeka/Q-Fill-For-Gmail/issues/new?template=missed_code.yml) with the wording around the code.
+On the 71 hand-written test emails in [test/fixtures/emails.js](test/fixtures/emails.js), 49 with a code and 22 without, the extractor gets all 71 right. The 1.x extractor got 44 of the same 71 right and filled years, follower counts and ticket numbers from emails with no code. These fixtures were written alongside the new extractor, some of them from a review that tried to break it, so treat 71 of 71 as a regression baseline, not a measured real-world accuracy. If Q-Fill misses a code in a real email, please [open an issue](https://github.com/qbeka/Q-Fill-For-Gmail/issues/new?template=missed_code.yml) with the wording around the code.
 
 More detail, including how the page field is chosen, is in [docs/how-it-works.md](docs/how-it-works.md).
 
@@ -101,8 +103,8 @@ npm test
 
 | Command | What it does |
 | --- | --- |
-| `npm test` | Unit tests for code extraction, message parsing and the search loop (85 tests, under a second) |
-| `npm run test:e2e` | Loads the real extension into Chromium and fills every page in `playground/` (13 tests, about 15 seconds). Run `npx playwright install chromium` once first |
+| `npm test` | Unit tests for code extraction, message parsing and the search loop (98 tests, under a second) |
+| `npm run test:e2e` | Loads the real extension into Chromium and fills every page in `playground/`, then checks which fields the autofill script must and must not touch (31 tests, about 10 seconds). Run `npx playwright install chromium` once first |
 | `npm run lint` | ESLint |
 | `npm run check` | Lint, unit tests and static checks on `extension/` (manifest paths, strings, store limits, network hosts) |
 | `npm run package` | Writes `dist/q-fill-<version>.zip` for the Chrome Web Store or Edge Add-ons |
@@ -137,6 +139,7 @@ docs/                      setup guide, how it works, images
 - Pages that block extensions, such as the Chrome Web Store and `chrome://` pages, cannot be filled. The code is still shown in the popup to copy.
 - A field inside an iframe from a different site than the page, as on some bank verification steps, cannot be filled, because clicking Q-Fill grants access to the page's own site only. The popup shows the code to copy.
 - The Google sign-in window takes focus, so the popup closes while you sign in. Open it again afterwards.
+- If the tab moves to a different site while Q-Fill waits for the email, the access you granted by clicking ends. Q-Fill then shows the code in the popup to copy instead of filling it.
 
 ## Contributing
 
