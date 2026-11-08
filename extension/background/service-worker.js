@@ -118,15 +118,18 @@ async function startFind(tabId, source) {
     job.controller.abort();
   }
 
-  const settings = await getSettings();
-  if (!settings.clientId || !settings.email) {
-    if (source === 'shortcut') await showToast(tabId, t('toastConnectFirst'), 'info', 4000);
-    return;
-  }
-
+  // Claim the slot before any await, so a second press cannot start a second run.
   const controller = new AbortController();
   const current = { tabId, phase: PHASE.CHECKING, deadline: 0, controller, waitingToastShown: false };
   job = current;
+
+  const settings = await getSettings();
+  if (!settings.clientId || !settings.email) {
+    if (job === current) job = null;
+    if (source === 'shortcut') await showToast(tabId, t('toastConnectFirst'), 'info', 4000);
+    return broadcast();
+  }
+
   await chrome.action.setBadgeText({ text: '…' });
   await broadcast();
 
