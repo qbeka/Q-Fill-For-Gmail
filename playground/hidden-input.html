@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Hidden input</title><link rel="stylesheet" href="style.css">
+<style>
+  .otp { position: relative; display: flex; gap: 8px; }
+  .otp div { width: 46px; height: 54px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 10px; font-size: 22px; color: var(--ink); }
+  .otp input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; letter-spacing: 2em; }
+</style></head>
+<body>
+  <main class="card">
+    <h1>Two-step verification</h1>
+    <p>A single transparent input sits over the six boxes, as in many component libraries.</p>
+    <div class="otp" id="otp">
+      <input autocomplete="one-time-code" inputmode="numeric" maxlength="6" aria-label="One-time code">
+      <div></div><div></div><div></div><div></div><div></div><div></div>
+    </div>
+    <div class="received" id="received">Received: none</div>
+  </main>
+  <script>
+    const input = document.querySelector('#otp input');
+    const cells = [...document.querySelectorAll('#otp div')];
+    input.addEventListener('input', () => {
+      input.value = input.value.replace(/\D/g, '').slice(0, 6);
+      cells.forEach((c, i) => { c.textContent = input.value[i] || ''; });
+      document.getElementById('received').textContent = 'Received: ' + (input.value || 'none');
+    });
+  </script>
+</body>
+</html>

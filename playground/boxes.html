@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Six boxes</title><link rel="stylesheet" href="style.css"></head>
+<body>
+  <main class="card">
+    <h1>Enter the code</h1>
+    <p>Type the 6-digit code from your email.</p>
+    <div class="boxes" id="boxes" role="group" aria-label="Verification code">
+      <input inputmode="numeric" maxlength="1" aria-label="Digit 1 of 6">
+      <input inputmode="numeric" maxlength="1" aria-label="Digit 2 of 6">
+      <input inputmode="numeric" maxlength="1" aria-label="Digit 3 of 6">
+      <input inputmode="numeric" maxlength="1" aria-label="Digit 4 of 6">
+      <input inputmode="numeric" maxlength="1" aria-label="Digit 5 of 6">
+      <input inputmode="numeric" maxlength="1" aria-label="Digit 6 of 6">
+    </div>
+    <button type="button">Continue</button>
+    <div class="received" id="received">Received: none</div>
+  </main>
+  <script>
+    const boxes = [...document.querySelectorAll('#boxes input')];
+    const show = () => { document.getElementById('received').textContent = 'Received: ' + (boxes.map(b => b.value).join('') || 'none'); };
+    boxes.forEach((box, i) => {
+      box.addEventListener('input', () => {
+        box.value = box.value.replace(/\D/g, '').slice(-1);
+        if (box.value && boxes[i + 1]) boxes[i + 1].focus();
+        show();
+      });
+      box.addEventListener('paste', e => {
+        e.preventDefault();
+        const digits = (e.clipboardData.getData('text') || '').replace(/\D/g, '');
+        boxes.forEach((b, j) => { b.value = digits[j] || ''; });
+        show();
+      });
+    });
+  </script>
+</body>
+</html>

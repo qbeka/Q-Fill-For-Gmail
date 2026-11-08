@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Login</title><link rel="stylesheet" href="style.css"></head>
+<body>
+  <main class="card">
+    <h1>Sign in</h1>
+    <p>Email, password and a code on one form. Only the code field should change.</p>
+    <form onsubmit="return false">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" value="sam@example.com">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" value="hunter22">
+      <label for="mfa">Code from your email</label>
+      <input id="mfa" name="mfa_token" type="text">
+      <label for="promo">Promo code (optional)</label>
+      <input id="promo" name="promo" type="text">
+      <button type="submit">Sign in</button>
+    </form>
+  </main>
+</body>
+</html>

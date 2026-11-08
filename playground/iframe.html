@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Iframe</title><link rel="stylesheet" href="style.css"></head>
+<body>
+  <main class="card">
+    <h1>Payment check</h1>
+    <p>The code field is inside an iframe, as on many bank and payment pages.</p>
+    <label for="search">Search help</label>
+    <input id="search" name="q" type="text">
+    <iframe id="frame" title="Verification" src="frame-inner.html"></iframe>
+  </main>
+  <script>
+    // ?cross=1 loads the frame from another origin (localhost <-> 127.0.0.1).
+    if (new URLSearchParams(location.search).get('cross')) {
+      const other = location.hostname === 'localhost' ? '127.0.0.1' : 'localhost';
+      document.getElementById('frame').src = `${location.protocol}//${other}:${location.port}/playground/frame-inner.html`;
+    }
+  </script>
+</body>
+</html>

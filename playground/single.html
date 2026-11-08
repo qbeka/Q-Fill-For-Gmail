@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Single field</title><link rel="stylesheet" href="style.css"></head>
+<body>
+  <main class="card">
+    <h1>Check your email</h1>
+    <p>We sent a 6-digit code to sam@example.com.</p>
+    <form onsubmit="return false">
+      <label for="otp">Verification code</label>
+      <input id="otp" name="otp" autocomplete="one-time-code" inputmode="numeric" maxlength="8">
+      <button type="submit">Verify</button>
+    </form>
+    <div class="received" id="received">Received: none</div>
+  </main>
+  <script>
+    document.getElementById('otp').addEventListener('input', e => {
+      document.getElementById('received').textContent = 'Received: ' + (e.target.value || 'none');
+    });
+  </script>
+</body>
+</html>

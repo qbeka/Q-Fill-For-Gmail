@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Q-Fill playground</title><link rel="stylesheet" href="style.css"></head>
+<body>
+  <main class="card">
+    <h1>Q-Fill playground</h1>
+    <p>Each page has a different kind of code field. Open one, send yourself an email such as <q>Your verification code is 482913</q>, then press Fill code in Q-Fill. The end-to-end tests run against these same pages.</p>
+    <ul>
+      <li><a href="single.html">Single field</a> with <code>autocomplete="one-time-code"</code></li>
+      <li><a href="boxes.html">Six separate boxes</a> with auto-advance and paste</li>
+      <li><a href="hidden-input.html">One transparent input over six boxes</a></li>
+      <li><a href="react.html">Framework-controlled input</a> that ignores plain value changes</li>
+      <li><a href="login.html">Login form</a> with email, password and a code field</li>
+      <li><a href="shadow.html">Field inside a shadow root</a></li>
+      <li><a href="iframe.html">Field inside a same-origin iframe</a></li>
+      <li><a href="no-field.html">A page with no code field</a></li>
+    </ul>
+    <p>Serve this folder over http, for example with <code>npx serve</code> from the repository root, then open <code>/playground/</code>.</p>
+  </main>
+</body>
+</html>

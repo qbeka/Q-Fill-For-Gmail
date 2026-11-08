@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Controlled input</title><link rel="stylesheet" href="style.css"></head>
+<body>
+  <main class="card">
+    <h1>Confirm it's you</h1>
+    <p>This field behaves like a React controlled input: setting <code>input.value</code> directly is ignored and undone on the next render.</p>
+    <label for="code">Security code</label>
+    <input id="code" name="securityCode" inputmode="numeric">
+    <button type="button">Confirm</button>
+    <div class="received" id="received">State: none</div>
+  </main>
+  <script>
+    // A small imitation of React's value tracking.
+    const input = document.getElementById('code');
+    const native = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+    let tracked = '';
+    let state = '';
+    Object.defineProperty(input, 'value', {
+      configurable: true,
+      get() { return native.get.call(this); },
+      set(v) { tracked = String(v); native.set.call(this, v); }
+    });
+    const render = () => {
+      native.set.call(input, state);
+      tracked = state;
+      document.getElementById('received').textContent = 'State: ' + (state || 'none');
+    };
+    input.addEventListener('input', () => {
+      const current = native.get.call(input);
+      if (current === tracked) return; // React sees no change and drops the event.
+      state = current.replace(/\D/g, '').slice(0, 8);
+      render();
+    });
+    setInterval(render, 250);
+  </script>
+</body>
+</html>
