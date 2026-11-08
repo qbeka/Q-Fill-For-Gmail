@@ -132,3 +132,49 @@ test('stops when cancelled', async () => {
   setTimeout(() => controller.abort(), 20);
   await assert.rejects(pending, { name: 'AbortError' });
 });
+
+test('a dropped connection while listing keeps the wait going', async () => {
+  const inbox = [message('m', T - 1000, 'Your code', 'Your code is 616161')];
+  const gmail = fakeGmail(T, () => inbox);
+  let failures = 2;
+  const listIds = gmail.deps.listIds;
+  gmail.deps.listIds = async (...args) => {
+    if (failures-- > 0) throw Object.assign(new Error('offline'), { status: 0 });
+    return listIds(...args);
+  };
+  const hit = await findNewestCode(gmail.deps, options);
+  assert.equal(hit.code, '616161');
+});
+
+test('when the newest message fails to load, it is retried instead of filling an older code', async () => {
+  const inbox = [
+    message('older', T - 5 * 60_000, 'Your code', 'Your code is 100100'),
+    message('newer', T - 10_000, 'Your code', 'Your code is 200200')
+  ];
+  const gmail = fakeGmail(T, () => inbox);
+  let failures = 1;
+  const getMessage = gmail.deps.getMessage;
+  gmail.deps.getMessage = async (token, id) => {
+    if (id === 'newer' && failures-- > 0) throw Object.assign(new Error('busy'), { status: 503 });
+    return getMessage(token, id);
+  };
+  const hit = await findNewestCode(gmail.deps, options);
+  assert.equal(hit.id, 'newer');
+  assert.equal(hit.code, '200200');
+});
+
+test('if Gmail stays unreachable, the last error is reported when time runs out', async () => {
+  const gmail = fakeGmail(T, () => []);
+  gmail.deps.listIds = async () => { throw Object.assign(new Error('offline'), { status: 0 }); };
+  await assert.rejects(findNewestCode(gmail.deps, options), /offline/);
+});
+
+test('a permanent error such as a disabled API stops at once', async () => {
+  const gmail = fakeGmail(T, () => []);
+  gmail.deps.listIds = async () => {
+    gmail.calls.list++;
+    throw Object.assign(new Error('Gmail API has not been used'), { status: 403 });
+  };
+  await assert.rejects(findNewestCode(gmail.deps, options), /not been used/);
+  assert.equal(gmail.calls.list, 1);
+});

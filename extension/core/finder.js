@@ -79,11 +79,15 @@ export async function findNewestCode(deps, options) {
   const seen = new Map();
   let retriedAuth = false;
   let first = true;
+  let lastError = null;
 
   for (;;) {
     if (signal?.aborted) throw abortError();
     onProgress?.({ phase: first ? 'checking' : 'waiting', deadline });
     first = false;
+
+    // True when this check could not see everything, so a newer code may exist.
+    let incomplete = false;
 
     try {
       const token = await deps.getToken();
@@ -97,12 +101,19 @@ export async function findNewestCode(deps, options) {
           return parseMessage(await deps.getMessage(token, id, signal));
         } catch (error) {
           if (error?.name === 'AbortError' || error?.status === 401) throw error;
-          return null;
+          if (!isRetryable(error)) return null;
+          lastError = error;
+          return undefined;
         }
       }));
 
       fresh.forEach((id, i) => {
         const message = parsed[i];
+        // Not cached, so the next check tries this message again.
+        if (message === undefined) {
+          incomplete = true;
+          return;
+        }
         if (!message || message.receivedAt < since) {
           seen.set(id, null);
           return;
@@ -120,20 +131,37 @@ export async function findNewestCode(deps, options) {
       });
       retriedAuth = false;
     } catch (error) {
+      if (error?.name === 'AbortError') throw error;
       if (error?.status === 401 && !retriedAuth && deps.dropToken) {
         retriedAuth = true;
         await deps.dropToken();
         continue;
       }
-      throw error;
+      if (!isRetryable(error)) throw error;
+      // A dropped connection or a busy Gmail: keep trying until the deadline.
+      lastError = error;
+      incomplete = true;
     }
 
     const newest = [...seen.values()]
       .filter(hit => hit && !skipIds.has(hit.id))
       .sort((a, b) => b.receivedAt - a.receivedAt)[0];
-    if (newest) return newest;
+    const timeLeft = now() + pollMs <= deadline;
 
-    if (now() + pollMs > deadline) return null;
+    if (newest && (!incomplete || !timeLeft)) return newest;
+    if (!timeLeft) {
+      if (incomplete && lastError) throw lastError;
+      return null;
+    }
     await wait(pollMs, signal);
   }
+}
+
+/**
+ * Network failures, rate limits and server errors are worth another try.
+ * @param {any} error
+ */
+function isRetryable(error) {
+  const status = error?.status;
+  return status === 0 || status === 429 || (typeof status === 'number' && status >= 500);
 }
